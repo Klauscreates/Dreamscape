@@ -1,0 +1,17 @@
+.DS_Store
+.venv/
+.mplconfig/
+.playwright-mcp/
+.pycache-local/
+.swift-cache/
+__pycache__/
+*.pyc
+
+analysis_tmp/
+single-orb-after-interaction.png
+
+# Local/generated analysis artifacts
+analysis_output/
+analysis_output_fixcheck/
+analysis_output_v2/
+analysis_output_v3/
