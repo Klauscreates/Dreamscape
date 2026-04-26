@@ -1,3 +1,4 @@
+# Judge-facing repo: keep source + bundled demo audio, ignore local runtime junk.
 .DS_Store
 .venv/
 .mplconfig/
@@ -10,7 +11,7 @@ __pycache__/
 analysis_tmp/
 single-orb-after-interaction.png
 
-# Local/generated analysis artifacts
+# Generated analysis exports are local experiment output, not required to run or judge the app.
 analysis_output/
 analysis_output_fixcheck/
 analysis_output_v2/

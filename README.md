@@ -2,6 +2,18 @@
 
 This workspace now contains a local sound-analysis lab built around the two MP3s in this folder.
 
+## What is included in the repo
+
+This repository intentionally keeps only the files needed to run and judge the project:
+
+- the app source: `index.html`, `styles.css`, `app.js`
+- the local server: `lab_server.py`
+- the smoke check: `smoke_check.py`
+- the batch-analysis prototype: `sound_analyzer.py`
+- the two bundled demo MP3s used for testing and judging
+
+Local analysis exports, caches, screenshots, and temporary artifacts are ignored on purpose so the repo stays focused on the runnable app.
+
 ## Primary entry point
 
 Start the local server:
