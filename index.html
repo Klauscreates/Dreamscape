@@ -3,474 +3,78 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Quantum Sound Lab</title>
+    <title>Dreamscape</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%236ee7ff'/%3E%3Cstop offset='1' stop-color='%23ffd36f'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='18' fill='%23050816'/%3E%3Cpath d='M19 32c0-7.18 5.82-13 13-13 4.34 0 8.19 2.12 10.55 5.38-1.6-1.07-3.53-1.69-5.6-1.69-5.52 0-10 4.48-10 10s4.48 10 10 10c2.07 0 4-.62 5.6-1.69A12.96 12.96 0 0 1 32 45c-7.18 0-13-5.82-13-13Zm13-5.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z' fill='url(%23g)'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%236ee7ff'/%3E%3Cstop offset='1' stop-color='%23a78bfa'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='18' fill='%23050816'/%3E%3Ccircle cx='32' cy='32' r='18' stroke='url(%23g)' stroke-width='3' fill='none'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <section class="hero">
-        <div class="app-badge-row">
-          <p class="eyebrow">Dreamscape</p>
-          <span class="app-badge">Audio State Lab</span>
-        </div>
-        <h1>Clean upload. Instant readout.</h1>
-        <p class="lede">
-          Add one track for a solo read. Add two for compare and collision.
-        </p>
-      </section>
+    <!-- Ambient background blobs -->
+    <div class="ambient" aria-hidden="true">
+      <div class="blob blob-1"></div>
+      <div class="blob blob-2"></div>
+      <div class="blob blob-3"></div>
+    </div>
 
-      <section class="panel mode-panel">
-        <div class="panel-head">
-          <div>
-            <p class="section-kicker">Investigation Mode</p>
-            <h2>Choose the lens before you probe the signal.</h2>
-          </div>
-          <p class="panel-copy" id="mode-description">
-            Structure mode emphasizes segmentation, recurrence, and motif density.
-          </p>
-        </div>
-        <div class="mode-buttons" id="mode-buttons">
-          <button class="mode-button active" data-mode="structure" type="button">Structure</button>
-          <button class="mode-button" data-mode="rhythm" type="button">Rhythm</button>
-          <button class="mode-button" data-mode="texture" type="button">Texture</button>
-          <button class="mode-button" data-mode="biosignal" type="button">Biosignal</button>
-          <button class="mode-button" data-mode="similarity" type="button">Similarity</button>
+    <div class="app">
+      <!-- Header -->
+      <header class="app-header">
+        <div class="logo">DREAMSCAPE</div>
+        <div class="header-status" id="header-status">Ready</div>
+      </header>
+
+      <!-- Hero: Brain sphere -->
+      <section class="orb-hero">
+        <canvas id="hero-orb" class="hero-orb-canvas"></canvas>
+        <p class="orb-label" id="orb-label">Upload a track to activate</p>
+        <div class="orb-actions">
+          <button id="orb-play-btn" class="btn-secondary orb-play-btn" hidden>▶ Play</button>
         </div>
       </section>
 
-      <section class="controls panel">
-        <div class="panel-head">
-          <div>
-            <p class="section-kicker">Import</p>
-            <h2>Pick the source.</h2>
-          </div>
-          <p class="panel-copy">
-            Local audio gives the real waveform read. Spotify links are saved as
-            context only.
-          </p>
+      <!-- Upload -->
+      <div class="upload-card-wrap">
+        <div class="upload-card-inner">
+          <input id="audio-files" type="file" accept=".mp3,.wav,.m4a,.ogg,.aac" multiple class="file-input" />
+          <label for="audio-files" class="drop-zone" id="drop-zone">
+            <span class="drop-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </span>
+            <span class="drop-text">Drop tracks or tap to browse</span>
+            <span class="drop-hint">MP3 · WAV · M4A · OGG · AAC</span>
+          </label>
+          <div class="file-list" id="file-list"></div>
         </div>
+      </div>
 
-        <div class="upload-paths">
-          <article class="upload-card">
-            <p class="section-kicker">Path 01</p>
-            <h3>Local audio</h3>
-            <p class="input-copy">One track for solo mode. Two tracks for compare mode.</p>
-            <input id="audio-files" type="file" accept=".mp3,.wav,.m4a,.ogg,.aac" multiple />
-            <p class="hint">Supported: MP3, WAV, M4A, OGG, AAC. Upload one file for the solo read or two files for compare and collision.</p>
-          </article>
+      <!-- Actions -->
+      <div class="action-row">
+        <button id="analyze-button" class="btn-primary">Generate</button>
+        <button id="export-button" class="btn-secondary" disabled>Export</button>
+      </div>
 
-          <article class="upload-card">
-            <p class="section-kicker">Path 02</p>
-            <h3>Spotify link</h3>
-            <p class="input-copy">Optional context for sharing. Not a stream bypass.</p>
-            <input id="spotify-url" type="url" placeholder="https://open.spotify.com/track/..." />
-            <p class="hint">If you only paste a Spotify link and do not upload audio, the app will tell you that waveform analysis still needs a real file.</p>
-          </article>
-        </div>
+      <div class="status-bar" id="status-line">Waiting for input.</div>
 
-        <div class="button-row">
-          <button id="analyze-button" type="button">Generate 5 Outputs</button>
-          <button id="export-button" type="button" disabled>Export Report</button>
-        </div>
+      <!-- Feature pills -->
+      <div class="feature-pills">
+        <div class="feat-pill"><strong>01</strong><span>Orb</span></div>
+        <div class="feat-pill"><strong>02</strong><span>State</span></div>
+        <div class="feat-pill"><strong>03</strong><span>Energy</span></div>
+        <div class="feat-pill"><strong>04</strong><span>Compare</span></div>
+        <div class="feat-pill"><strong>05</strong><span>Collision</span></div>
+        <div class="feat-pill"><strong>06</strong><span>Study Coach</span></div>
+        <div class="feat-pill"><strong>07</strong><span>Room Scan</span></div>
+        <div class="feat-pill"><strong>08</strong><span>Cleanser</span></div>
+      </div>
 
-        <div class="status-line" id="status-line">Waiting for input.</div>
-
-        <div class="core-feature-strip">
-          <article class="feature-pill">
-            <strong>01</strong>
-            <span>Artifact</span>
-          </article>
-          <article class="feature-pill">
-            <strong>02</strong>
-            <span>State</span>
-          </article>
-          <article class="feature-pill">
-            <strong>03</strong>
-            <span>Energy</span>
-          </article>
-          <article class="feature-pill">
-            <strong>04</strong>
-            <span>Compare</span>
-          </article>
-          <article class="feature-pill">
-            <strong>05</strong>
-            <span>Collision</span>
-          </article>
-        </div>
-
-        <div class="legacy-support">
-          <div class="control-grid">
-            <div class="control-block">
-              <label for="eeg-file">EEG CSV</label>
-              <input id="eeg-file" type="file" accept=".csv" />
-            </div>
-            <div class="control-block">
-              <label for="emf-file">EMF CSV</label>
-              <input id="emf-file" type="file" accept=".csv" />
-            </div>
-          </div>
-
-          <div class="control-grid config-grid">
-            <div class="control-block">
-              <label for="frame-size">Frame size</label>
-              <select id="frame-size">
-                <option value="1024">1024</option>
-                <option value="2048" selected>2048</option>
-                <option value="4096">4096</option>
-              </select>
-            </div>
-            <div class="control-block">
-              <label for="hop-size">Hop size</label>
-              <select id="hop-size">
-                <option value="256">256</option>
-                <option value="512" selected>512</option>
-                <option value="1024">1024</option>
-              </select>
-            </div>
-            <div class="control-block">
-              <label for="modulation-resample">Mod resample Hz</label>
-              <input id="modulation-resample" type="number" min="50" max="600" step="10" value="200" />
-            </div>
-            <div class="control-block">
-              <label for="segmentation-sensitivity">Segmentation sensitivity</label>
-              <input id="segmentation-sensitivity" type="range" min="70" max="98" step="1" value="90" />
-              <div class="range-value" id="segmentation-sensitivity-value">90th percentile</div>
-            </div>
-            <div class="control-block">
-              <label for="motif-span">Motif span</label>
-              <input id="motif-span" type="range" min="3" max="6" step="1" value="4" />
-              <div class="range-value" id="motif-span-value">4 tokens</div>
-            </div>
-            <div class="control-block">
-              <label for="focus-window">Focus window</label>
-              <input id="focus-window" type="range" min="1" max="12" step="0.5" value="2.5" />
-              <div class="range-value" id="focus-window-value">2.5 s</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel live-panel">
-        <div class="panel-head split-head">
-          <div>
-            <p class="section-kicker">Focus Deck</p>
-            <h2>Scrub, jump, and sample the active signal.</h2>
-          </div>
-          <div class="inline-controls">
-            <div class="mini-control">
-              <label for="selected-track">Active track</label>
-              <select id="selected-track"></select>
-            </div>
-          </div>
-        </div>
-
-        <audio id="audio-player" controls preload="metadata"></audio>
-
-        <div class="transport-row">
-          <div class="transport-pill" id="playback-time">No track loaded.</div>
-          <div class="button-row compact">
-            <button id="prev-segment" type="button">Prev Boundary</button>
-            <button id="next-segment" type="button">Next Boundary</button>
-            <button id="bookmark-focus" type="button">Bookmark Now</button>
-            <button id="add-focus-clip" type="button">Add Focus Clip</button>
-          </div>
-        </div>
-
-        <div class="chart-shell">
-          <canvas id="timeline-canvas" class="interactive-canvas"></canvas>
-        </div>
-        <div class="focus-readout" id="focus-readout"></div>
-      </section>
-
-      <section class="panel mission-panel">
-        <div class="panel-head">
-          <div>
-            <p class="section-kicker">Guided Missions</p>
-            <h2>Turn the analyzer into an instrument.</h2>
-          </div>
-          <p class="panel-copy">
-            These missions drive the UI toward something concrete instead of leaving the user inside a passive report.
-          </p>
-        </div>
-        <div class="mission-grid" id="mission-grid">
-          <button class="mission-button" data-mission="repetition" type="button">Find Most Repetitive Region</button>
-          <button class="mission-button" data-mission="modulation" type="button">Locate Strongest Modulation</button>
-          <button class="mission-button" data-mission="spectral-signature" type="button">Reveal Spectral Signature</button>
-          <button class="mission-button" data-mission="universal-tuning" type="button">Check Universal Tuning</button>
-          <button class="mission-button" data-mission="skeptic" type="button">Run Skeptic Pass</button>
-          <button class="mission-button" data-mission="random-segment" type="button">QRNG Random Segment</button>
-          <button class="mission-button" data-mission="build-reel" type="button">Queue Focus Window</button>
-        </div>
-        <div class="status-line subtle" id="mission-output">Pick a mission to push the workspace into a concrete task.</div>
-      </section>
-
-      <section class="summary-grid" id="summary-grid"></section>
-
-      <section class="workspace-grid">
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">Interactive Charts</p>
-              <h2>Hover for values, click to jump.</h2>
-            </div>
-          </div>
-          <div class="chart-stack">
-            <article class="chart-card">
-              <h3 id="chart-a-title">Awaiting analysis</h3>
-              <p class="metric-note" id="chart-a-copy">Run the analyzer to populate the first interactive view.</p>
-              <canvas id="chart-a-canvas" class="interactive-canvas"></canvas>
-              <div class="chart-readout" id="chart-a-readout"></div>
-            </article>
-            <article class="chart-card">
-              <h3 id="chart-b-title">Awaiting analysis</h3>
-              <p class="metric-note" id="chart-b-copy">Run the analyzer to populate the second interactive view.</p>
-              <canvas id="chart-b-canvas" class="interactive-canvas"></canvas>
-              <div class="chart-readout" id="chart-b-readout"></div>
-            </article>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">A/B Comparison</p>
-              <h2>Overlay two tracks and measure the gap.</h2>
-            </div>
-          </div>
-          <div class="control-grid compare-grid">
-            <div class="control-block">
-              <label for="compare-left">Left track</label>
-              <select id="compare-left"></select>
-            </div>
-            <div class="control-block">
-              <label for="compare-right">Right track</label>
-              <select id="compare-right"></select>
-            </div>
-          </div>
-          <div class="mini-grid" id="comparison-metrics"></div>
-          <div class="chart-shell">
-            <canvas id="comparison-canvas" class="interactive-canvas"></canvas>
-          </div>
-        </article>
-      </section>
-
-      <section class="workspace-grid">
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">Human Readout</p>
-              <h2>Translate signal math into vibe, quality, body, and ritual language.</h2>
-            </div>
-            <p class="panel-copy">
-              This layer summarizes the active track in plain human terms, then compares it against preset mood profiles.
-            </p>
-          </div>
-          <div class="human-grid" id="human-readout"></div>
-          <div class="button-row compact">
-            <button class="profile-button" data-profile="astral-projection" type="button">Astral Projection</button>
-            <button class="profile-button" data-profile="boss-battle" type="button">Boss Battle</button>
-            <button class="profile-button" data-profile="meditation-trance" type="button">Meditation / Trance</button>
-          </div>
-          <pre class="console-output" id="profile-output">No mood profile run yet.</pre>
-        </article>
-
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">Cosmic Lens</p>
-              <h2>Map timbre, shimmer, grounding, and tuning signatures.</h2>
-            </div>
-            <p class="panel-copy">
-              Turn centroid, flatness, peaks, and harmonic spacing into explicit spectral and tuning reads.
-            </p>
-          </div>
-          <div class="button-row compact">
-            <button class="cosmic-button" data-cosmic="signature" type="button">Spectral Signature</button>
-            <button class="cosmic-button" data-cosmic="tuning" type="button">Universal Tuning</button>
-            <button class="cosmic-button" data-cosmic="ratios" type="button">Harmonic Ratios</button>
-          </div>
-          <pre class="console-output" id="cosmic-output">No cosmic read has been generated yet.</pre>
-        </article>
-
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">Motif Workbench</p>
-              <h2>Grab motifs, jump to hits, build clips.</h2>
-            </div>
-          </div>
-          <div class="motif-workbench" id="motif-workbench"></div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">Annotations</p>
-              <h2>Mark what matters while you listen.</h2>
-            </div>
-          </div>
-          <div class="control-grid annotation-form">
-            <div class="control-block">
-              <label for="annotation-category">Category</label>
-              <select id="annotation-category">
-                <option value="interesting">Interesting</option>
-                <option value="artifact">Artifact</option>
-                <option value="possible-sync">Possible Sync</option>
-                <option value="false-positive">False Positive</option>
-                <option value="custom">Custom</option>
-              </select>
-            </div>
-            <div class="control-block grow">
-              <label for="annotation-note">Note</label>
-              <input id="annotation-note" type="text" maxlength="160" placeholder="Why this moment matters" />
-            </div>
-            <div class="control-block action">
-              <label>&nbsp;</label>
-              <button id="save-annotation" type="button">Save Annotation</button>
-            </div>
-          </div>
-          <div class="annotation-list" id="annotation-list"></div>
-        </article>
-      </section>
-
-      <section class="workspace-grid">
-        <article class="panel">
-          <div class="panel-head split-head">
-            <div>
-              <p class="section-kicker">Biosignal Alignment</p>
-              <h2>Shift the lag and watch the pairing move.</h2>
-            </div>
-            <div class="inline-controls">
-              <div class="mini-control">
-                <label for="biosignal-source">Source</label>
-                <select id="biosignal-source">
-                  <option value="EEG">EEG</option>
-                  <option value="EMF">EMF</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          <div class="control-block">
-            <label for="biosignal-lag">Manual lag center</label>
-            <input id="biosignal-lag" type="range" min="-2" max="2" step="0.25" value="0" />
-            <div class="range-value" id="biosignal-lag-value">0.00 s</div>
-          </div>
-          <div class="biosignal-summary" id="biosignal-summary"></div>
-          <div class="chart-shell">
-            <canvas id="biosignal-canvas" class="interactive-canvas"></canvas>
-          </div>
-          <div class="biosignal-results" id="biosignal-results"></div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">Challenge Layer</p>
-              <h2>Interrogate the output instead of trusting it.</h2>
-            </div>
-          </div>
-          <div class="button-row compact">
-            <button class="skeptic-button" data-skeptic="evidence" type="button">Show Evidence</button>
-            <button class="skeptic-button" data-skeptic="shuffle" type="button">Shuffle Baseline</button>
-            <button class="skeptic-button" data-skeptic="noise-floor" type="button">Inspect Noise Floor</button>
-          </div>
-          <pre class="console-output" id="skeptic-output">No skeptical check run yet.</pre>
-        </article>
-      </section>
-
-      <section class="workspace-grid">
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">QRNG Lab</p>
-              <h2>Use quantum entropy to sample the investigation space.</h2>
-            </div>
-          </div>
-          <div class="control-grid">
-            <div class="control-block">
-              <label for="qrng-provider">Provider</label>
-              <select id="qrng-provider">
-                <option value="anu">ANU QRNG</option>
-                <option value="qci">QCI QRNG</option>
-                <option value="system">System Fallback</option>
-              </select>
-            </div>
-            <div class="control-block">
-              <label for="qrng-fallback">Fallback</label>
-              <select id="qrng-fallback">
-                <option value="system">System Fallback</option>
-                <option value="anu">ANU QRNG</option>
-                <option value="qci">QCI QRNG</option>
-              </select>
-            </div>
-            <div class="control-block">
-              <label for="qrng-count">Count</label>
-              <input id="qrng-count" type="number" value="16" min="1" max="1024" />
-            </div>
-            <div class="control-block">
-              <label for="qrng-bits">Bit Width</label>
-              <select id="qrng-bits">
-                <option value="8">8-bit</option>
-                <option value="16" selected>16-bit</option>
-                <option value="32">32-bit</option>
-              </select>
-            </div>
-          </div>
-          <div class="button-row compact">
-            <button id="qrng-button" type="button">Fetch QRNG Sample</button>
-            <button class="qrng-action" data-qrng-action="segment" type="button">Sample Random Segment</button>
-            <button class="qrng-action" data-qrng-action="motif" type="button">Sample Random Motif</button>
-          </div>
-          <div class="status-line" id="qrng-status-line">QRNG idle.</div>
-          <pre class="console-output" id="qrng-output">No QRNG sample fetched yet.</pre>
-        </article>
-
-        <article class="panel">
-          <div class="panel-head">
-            <div>
-              <p class="section-kicker">Composite Reel</p>
-              <h2>Assemble clips and analyze the derived sequence.</h2>
-            </div>
-          </div>
-          <div class="reel-list" id="reel-list"></div>
-          <div class="button-row compact">
-            <button id="analyze-reel" type="button">Analyze Reel</button>
-            <button id="clear-reel" type="button">Clear Reel</button>
-          </div>
-          <div class="reel-output" id="reel-output"></div>
-        </article>
-      </section>
-
-      <section class="guardrails panel">
-        <div class="panel-head">
-          <div>
-            <p class="section-kicker">Scientific Guardrails</p>
-            <h2>Keep the curiosity aggressive and the claims disciplined.</h2>
-          </div>
-        </div>
-        <ul>
-          <li>This tool extracts acoustic structure and correlations. It does not prove hidden language, consciousness transfer, or forced trance.</li>
-          <li>Audio modulation bands are compared against EEG-style labels only as overlap in frequency ranges, not as direct brain measurements.</li>
-          <li>Any EEG or EMF match here should be treated as a hypothesis generator for later controlled experiments.</li>
-        </ul>
-      </section>
-
-      <section class="panel report-stage">
-        <div class="panel-head">
-          <div>
-            <p class="section-kicker">Dashboard</p>
-            <h2>The five-output app view.</h2>
-          </div>
-        </div>
-        <section class="track-results" id="track-results"></section>
-      </section>
-    </main>
-
-    <div class="chart-tooltip hidden" id="chart-tooltip"></div>
+      <!-- Dashboard -->
+      <section class="dashboard" id="track-results"></section>
+    </div>
 
     <script type="module" src="app.js"></script>
   </body>

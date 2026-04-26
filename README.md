@@ -1,13 +1,13 @@
 # Quantum Sound Lab
 
-This workspace contains a local sound-analysis lab with a browser app and an optional heavier Python batch-analysis path.
+This workspace contains a browser-based Dreamscape app and one optional heavier Python batch-analysis path.
 
 ## What is included in the repo
 
 This repository intentionally keeps only the files needed to run and judge the project:
 
 - the app source: `index.html`, `styles.css`, `app.js`
-- the local server: `lab_server.py`
+- a tiny local preview server: `lab_server.py`
 - the smoke check: `smoke_check.py`
 - the batch-analysis prototype: `sound_analyzer.py`
 - the Python environment/bootstrap files: `requirements.txt`, `requirements-essentia.txt`, `bootstrap_python_env.sh`
@@ -16,13 +16,51 @@ Local analysis exports, caches, screenshots, temporary artifacts, and local MP3 
 
 ## Primary entry point
 
-Start the local server:
+For local preview, start the lightweight server:
 
 ```bash
 python3 lab_server.py
 ```
 
 Then open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+
+## Public deployment on Vercel
+
+The current browser app can be deployed publicly as a static Vercel site.
+
+What works on Vercel:
+
+- the full browser UI
+- audio upload and browser-side analysis
+- spectral, modulation, segmentation, MFCC, chroma, HPCP-style, recurrence, and key-field analysis in the browser
+- the orb / compare / collision visuals
+- `Room Scan` microphone capture, because Vercel serves over HTTPS
+- JSON export
+
+The only major capability that remains separate from the public site is:
+
+- the heavier Python batch analyzer in `sound_analyzer.py`
+
+Local-only analysis output folders also stay out of the deployment.
+
+Quick deploy:
+
+```bash
+npx vercel
+```
+
+Production deploy:
+
+```bash
+npx vercel --prod
+```
+
+The repo includes:
+
+- `vercel.json` for headers and caching
+- `.vercelignore` so large local artifacts, caches, and analysis folders do not get uploaded
+
+`lab_server.py` is only a lightweight local preview server. It is not part of the public product surface on Vercel.
 
 For the Python batch-analysis stack, create the workspace venv:
 
@@ -71,38 +109,11 @@ If you happen to have the local demo file used during development, this also wor
 python sound_analyzer.py "analog_mannequin - and all its contents.mp3" --out-dir analysis_output_smoke
 ```
 
-## QRNG API
-
-The local server now exposes a QRNG-ready API:
-
-- `GET /api/qrng/providers`
-- `GET /api/qrng/health`
-- `GET /api/qrng?provider=anu&fallback=system&count=16&bits=16`
-
-Example:
-
-```bash
-curl "http://127.0.0.1:8000/api/qrng?provider=anu&fallback=system&count=8&bits=16"
-```
-
-Supported providers:
-
-- `anu`: public ANU QRNG endpoint
-- `qci`: QCI QRNG endpoint, requires `QCI_API_TOKEN` as the QCI refresh token
-- `system`: local cryptographic fallback from Python `secrets`
-
-Configure QCI by exporting:
-
-```bash
-export QCI_API_TOKEN="your-token-here"
-```
-
-The browser UI also includes a QRNG Console for manual fetches.
-
 ## What the lab does
 
 - decodes audio locally in the browser with Web Audio
 - breaks each track into frame-level spectral and rhythmic features
+- computes browser-native MFCC summaries, chroma, HPCP-style harmonic profiles, recurrence affinity, and key estimates
 - measures envelope-modulation bands aligned to delta/theta/alpha/beta/gamma ranges
 - extracts repeated symbolic motifs from acoustic state changes
 - derives structural evidence from recurrence, phase stability, segmentation, and transient density
@@ -153,7 +164,7 @@ For EEG you can also pass native files to the batch analyzer:
 - [index.html](/Users/nikolaistoloff/Downloads/dreamscape/index.html): the analyzer UI
 - [app.js](/Users/nikolaistoloff/Downloads/dreamscape/app.js): decoding, feature extraction, motif analysis, biosignal correlation
 - [styles.css](/Users/nikolaistoloff/Downloads/dreamscape/styles.css): interface styling
-- [lab_server.py](/Users/nikolaistoloff/Downloads/dreamscape/lab_server.py): local server plus QRNG API
+- [lab_server.py](/Users/nikolaistoloff/Downloads/dreamscape/lab_server.py): lightweight local preview server
 - [sound_analyzer.py](/Users/nikolaistoloff/Downloads/dreamscape/sound_analyzer.py): heavier batch-analysis path for local audio files
 - [requirements.txt](/Users/nikolaistoloff/Downloads/dreamscape/requirements.txt): core Python dependencies for the batch-analysis path
 - [requirements-essentia.txt](/Users/nikolaistoloff/Downloads/dreamscape/requirements-essentia.txt): optional Essentia dependency layer

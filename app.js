@@ -1,19 +1,11 @@
-const DEFAULT_TRACKS = [
-  "analog_mannequin - and all its contents.mp3",
-  "øneheart - watching the stars (sped up).mp3",
-];
-
 const DEFAULT_CONFIG = {
   frameSize: 2048,
   hopSize: 512,
   modulationResampleHz: 200,
   segmentationQuantile: 0.9,
   motifSpan: 4,
-  biosignalLagCenterS: 0,
-  biosignalLagWindowS: 2,
 };
 
-const STORAGE_KEY = "quantum-sound-lab-annotations-v2";
 const FEATURE_FIELDS = [
   "rms",
   "zcr",
@@ -36,250 +28,15 @@ const BRAIN_BANDS = {
   gamma: [30, 45],
 };
 
-const MODE_DEFINITIONS = {
-  structure: {
-    description: "Structure mode emphasizes segmentation, recurrence, and motif density.",
-    charts: [
-      {
-        title: "Energy Timeline",
-        copy: "Frame-level RMS with section boundaries and the active playback cursor.",
-        build(report) {
-          return {
-            type: "time",
-            series: [
-              {
-                name: "RMS",
-                color: "#6ee7ff",
-                points: report.features.map((item) => ({ x: item.time_s, y: item.rms })),
-              },
-            ],
-            markers: report.segmentation.boundaries.map((item) => ({
-              x: item.time_s,
-              color: "rgba(255, 211, 111, 0.55)",
-            })),
-            readoutLabel: "RMS",
-          };
-        },
-      },
-      {
-        title: "Novelty Map",
-        copy: "Embedding-space novelty used to cut the track into structural sections.",
-        build(report) {
-          return {
-            type: "time",
-            series: [
-              {
-                name: "Novelty",
-                color: "#ffd36f",
-                points: report.segmentation.novelty.map((value, index) => ({
-                  x: report.features[index]?.time_s || 0,
-                  y: value,
-                })),
-              },
-            ],
-            markers: report.segmentation.boundaries.map((item) => ({
-              x: item.time_s,
-              color: "rgba(255, 123, 156, 0.55)",
-            })),
-            readoutLabel: "Novelty",
-          };
-        },
-      },
-    ],
-  },
-  rhythm: {
-    description: "Rhythm mode pushes onset strength, attack bursts, and slow envelope modulation to the foreground.",
-    charts: [
-      {
-        title: "Attack Strength",
-        copy: "Attack intensity across time. Useful for transient-rich regions and beat-like surges.",
-        build(report) {
-          return {
-            type: "time",
-            series: [
-              {
-                name: "Attack",
-                color: "#ff7b9c",
-                points: report.features.map((item) => ({ x: item.time_s, y: item.attack_strength })),
-              },
-            ],
-            markers: report.segmentation.boundaries.map((item) => ({
-              x: item.time_s,
-              color: "rgba(110, 231, 255, 0.42)",
-            })),
-            readoutLabel: "Attack",
-          };
-        },
-      },
-      {
-        title: "Modulation Spectrum",
-        copy: "Low-frequency envelope motion where the EEG-style band labels live.",
-        build(report) {
-          return {
-            type: "value",
-            series: [
-              {
-                name: "Modulation",
-                color: "#ffd36f",
-                points: report.modulationSpectrum
-                  .map((value, index) => ({
-                    x: report.modulationFreqs[index],
-                    y: value,
-                  }))
-                  .filter((item) => item.x <= 45),
-              },
-            ],
-            xDomain: [0, 45],
-            readoutLabel: "Magnitude",
-          };
-        },
-      },
-    ],
-  },
-  texture: {
-    description: "Texture mode focuses on timbral brightness, spread, and how spectral mass drifts through the track.",
-    charts: [
-      {
-        title: "Spectral Centroid",
-        copy: "Brightness trace across the active track.",
-        build(report) {
-          return {
-            type: "time",
-            series: [
-              {
-                name: "Centroid",
-                color: "#90f0b6",
-                points: report.features.map((item) => ({ x: item.time_s, y: item.spectral_centroid_hz })),
-              },
-            ],
-            readoutLabel: "Hz",
-          };
-        },
-      },
-      {
-        title: "Spectral Rolloff",
-        copy: "Upper-energy boundary as the texture opens or collapses.",
-        build(report) {
-          return {
-            type: "time",
-            series: [
-              {
-                name: "Rolloff",
-                color: "#6ee7ff",
-                points: report.features.map((item) => ({ x: item.time_s, y: item.spectral_rolloff_hz })),
-              },
-            ],
-            readoutLabel: "Hz",
-          };
-        },
-      },
-    ],
-  },
-  biosignal: {
-    description: "Biosignal mode keeps audio metrics live while the lag window and signal pairings are adjusted.",
-    charts: [
-      {
-        title: "Energy Trace",
-        copy: "Audio energy remains the base layer for biosignal alignment work.",
-        build(report) {
-          return {
-            type: "time",
-            series: [
-              {
-                name: "RMS",
-                color: "#6ee7ff",
-                points: report.features.map((item) => ({ x: item.time_s, y: item.rms })),
-              },
-            ],
-            readoutLabel: "RMS",
-          };
-        },
-      },
-      {
-        title: "Phase Lock",
-        copy: "Phase stability often exposes coherent zones worth checking against biosignals.",
-        build(report) {
-          return {
-            type: "time",
-            series: [
-              {
-                name: "Phase lock",
-                color: "#ff7b9c",
-                points: report.features.map((item) => ({ x: item.time_s, y: item.phase_lock })),
-              },
-            ],
-            readoutLabel: "Phase",
-          };
-        },
-      },
-    ],
-  },
-  similarity: {
-    description: "Similarity mode frames the active report as one member of a pair rather than an isolated specimen.",
-    charts: [
-      {
-        title: "Spectral Flux",
-        copy: "Flux is a useful divergence indicator when comparing related tracks.",
-        build(report) {
-          return {
-            type: "time",
-            series: [
-              {
-                name: "Flux",
-                color: "#ffd36f",
-                points: report.features.map((item) => ({ x: item.time_s, y: item.spectral_flux })),
-              },
-            ],
-            readoutLabel: "Flux",
-          };
-        },
-      },
-      {
-        title: "Dominant Frequency",
-        copy: "Where the strongest frequency bin sits over time.",
-        build(report) {
-          return {
-            type: "time",
-            series: [
-              {
-                name: "Dominant frequency",
-                color: "#90f0b6",
-                points: report.features.map((item) => ({ x: item.time_s, y: item.dominant_freq_hz })),
-              },
-            ],
-            readoutLabel: "Hz",
-          };
-        },
-      },
-    ],
-  },
-};
-
 const state = {
   reports: [],
   derivedReports: [],
-  eegRows: null,
-  emfRows: null,
-  biosignalValidation: {},
   config: { ...DEFAULT_CONFIG },
-  mode: "structure",
   selectedTrackId: null,
   comparison: {
     leftId: null,
     rightId: null,
   },
-  annotations: loadAnnotations(),
-  reelClips: [],
-  qrngSample: null,
-  qrngCursor: 0,
-  focusWindowS: 2.5,
-  selectedBiosignalSource: "EEG",
-  selectedCorrelationKeys: {
-    EEG: null,
-    EMF: null,
-  },
-  pendingSeek: null,
-  spotifyContext: "",
   visuals: {
     artifact: { yaw: 0.32, pitch: 0.18, zoom: 1, dragging: false, lastX: 0, lastY: 0 },
     collision: { yaw: 0.18, pitch: -0.12, zoom: 1, dragging: false, lastX: 0, lastY: 0 },
@@ -289,107 +46,49 @@ const state = {
 window.__quantumSoundLab = { state };
 
 const audioInput = document.querySelector("#audio-files");
-const spotifyUrlInput = document.querySelector("#spotify-url");
-const eegInput = document.querySelector("#eeg-file");
-const emfInput = document.querySelector("#emf-file");
-const frameSizeInput = document.querySelector("#frame-size");
-const hopSizeInput = document.querySelector("#hop-size");
-const modulationResampleInput = document.querySelector("#modulation-resample");
-const segmentationSensitivityInput = document.querySelector("#segmentation-sensitivity");
-const motifSpanInput = document.querySelector("#motif-span");
-const focusWindowInput = document.querySelector("#focus-window");
-const biosignalLagInput = document.querySelector("#biosignal-lag");
 const analyzeButton = document.querySelector("#analyze-button");
 const exportButton = document.querySelector("#export-button");
 const statusLine = document.querySelector("#status-line");
-const modeDescription = document.querySelector("#mode-description");
-const summaryGrid = document.querySelector("#summary-grid");
-const selectedTrackSelect = document.querySelector("#selected-track");
-const compareLeftSelect = document.querySelector("#compare-left");
-const compareRightSelect = document.querySelector("#compare-right");
-const audioPlayer = document.querySelector("#audio-player");
-const playbackTime = document.querySelector("#playback-time");
-const focusReadout = document.querySelector("#focus-readout");
-const missionOutput = document.querySelector("#mission-output");
-const chartATitle = document.querySelector("#chart-a-title");
-const chartACopy = document.querySelector("#chart-a-copy");
-const chartAReadout = document.querySelector("#chart-a-readout");
-const chartACanvas = document.querySelector("#chart-a-canvas");
-const chartBTitle = document.querySelector("#chart-b-title");
-const chartBCopy = document.querySelector("#chart-b-copy");
-const chartBReadout = document.querySelector("#chart-b-readout");
-const chartBCanvas = document.querySelector("#chart-b-canvas");
-const comparisonMetrics = document.querySelector("#comparison-metrics");
-const comparisonCanvas = document.querySelector("#comparison-canvas");
-const motifWorkbench = document.querySelector("#motif-workbench");
-const annotationCategory = document.querySelector("#annotation-category");
-const annotationNote = document.querySelector("#annotation-note");
-const annotationList = document.querySelector("#annotation-list");
-const biosignalSourceSelect = document.querySelector("#biosignal-source");
-const biosignalLagValue = document.querySelector("#biosignal-lag-value");
-const biosignalSummary = document.querySelector("#biosignal-summary");
-const biosignalCanvas = document.querySelector("#biosignal-canvas");
-const biosignalResults = document.querySelector("#biosignal-results");
-const skepticOutput = document.querySelector("#skeptic-output");
-const cosmicOutput = document.querySelector("#cosmic-output");
-const humanReadout = document.querySelector("#human-readout");
-const profileOutput = document.querySelector("#profile-output");
-const qrngProvider = document.querySelector("#qrng-provider");
-const qrngFallback = document.querySelector("#qrng-fallback");
-const qrngCount = document.querySelector("#qrng-count");
-const qrngBits = document.querySelector("#qrng-bits");
-const qrngButton = document.querySelector("#qrng-button");
-const qrngStatusLine = document.querySelector("#qrng-status-line");
-const qrngOutput = document.querySelector("#qrng-output");
-const reelList = document.querySelector("#reel-list");
-const analyzeReelButton = document.querySelector("#analyze-reel");
-const clearReelButton = document.querySelector("#clear-reel");
-const reelOutput = document.querySelector("#reel-output");
+const headerStatus = document.querySelector("#header-status");
 const trackResults = document.querySelector("#track-results");
-const chartTooltip = document.querySelector("#chart-tooltip");
-const segmentationValue = document.querySelector("#segmentation-sensitivity-value");
-const motifSpanValue = document.querySelector("#motif-span-value");
-const focusWindowValue = document.querySelector("#focus-window-value");
-const timelineCanvas = document.querySelector("#timeline-canvas");
+const fileList = document.querySelector("#file-list");
+const dropZone = document.querySelector("#drop-zone");
+const orbLabel = document.querySelector("#orb-label");
+const orbPlayBtn = document.querySelector("#orb-play-btn");
 
-const modeButtons = [...document.querySelectorAll(".mode-button")];
-const missionButtons = [...document.querySelectorAll(".mission-button")];
-const skepticButtons = [...document.querySelectorAll(".skeptic-button")];
-const cosmicButtons = [...document.querySelectorAll(".cosmic-button")];
-const profileButtons = [...document.querySelectorAll(".profile-button")];
-const qrngActionButtons = [...document.querySelectorAll(".qrng-action")];
+const liveState = {
+  analyser: null,
+  liveFreqData: null,
+  isPlaying: false,
+  sourceNode: null,
+  playingReportId: null,
+  audioBuffers: new Map(), // report.id → AudioBuffer
+  buildSpectrum: null,
+  buildHzPerBin: 1,
+  buildProgress: 0,
+  isBuilding: false,
+  buildMeta: null,
+};
 
-const chartRegistry = new Map();
-const audioContext = new AudioContext();
+const roomState = {
+  isScanning: false,
+  stream: null,
+  sourceNode: null,
+  analyser: null,
+  freqData: null,
+  timeData: null,
+  previousSpectrum: null,
+  heatmapFrames: [],
+  rollingFrames: [],
+  spots: [],
+  summary: null,
+  error: null,
+  sampleRate: 0,
+  fftSize: 1024,
+  lastUiRefreshAt: 0,
+};
 
-function setStatus(message) {
-  statusLine.textContent = message;
-}
-
-function setQrngStatus(message) {
-  qrngStatusLine.textContent = message;
-}
-
-function setMissionOutput(message) {
-  missionOutput.textContent = message;
-}
-
-function setSkepticOutput(text) {
-  skepticOutput.textContent = text;
-}
-
-function setCosmicOutput(text) {
-  cosmicOutput.textContent = text;
-}
-
-function setProfileOutput(text) {
-  profileOutput.textContent = text;
-}
-
-function revealPanel(element) {
-  if (!element?.scrollIntoView) return;
-  element.scrollIntoView({ behavior: "smooth", block: "center" });
-}
+// ─── Math helpers ────────────────────────────────────────────────────────────
 
 function mean(values) {
   if (!values.length) return 0;
@@ -411,6 +110,13 @@ function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+function round(value, digits = 0) {
+  const scale = 10 ** digits;
+  return Math.round(value * scale) / scale;
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -426,78 +132,31 @@ function slugify(value) {
     .replace(/^-+|-+$/g, "") || "item";
 }
 
-function formatSeconds(value) {
-  const seconds = clamp(Number(value) || 0, 0, Number.POSITIVE_INFINITY);
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds - minutes * 60;
-  return `${minutes}:${remainder.toFixed(2).padStart(5, "0")}`;
-}
-
-function formatCompactSeconds(value) {
-  return `${(Number(value) || 0).toFixed(2)} s`;
-}
-
 function normalizeScore(value, minimum, maximum) {
   if (maximum === minimum) return 0;
   return clamp((value - minimum) / (maximum - minimum), 0, 1);
 }
 
-function parseSpotifyContext(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
-  const match = raw.match(/spotify\.com\/(track|album|playlist)\/([A-Za-z0-9]+)/i);
-  if (!match) {
-    return {
-      raw,
-      type: "external-link",
-      id: null,
-      label: raw,
-      note: "Saved as external context only. Direct waveform analysis still requires uploaded audio.",
-    };
-  }
-  return {
-    raw,
-    type: match[1].toLowerCase(),
-    id: match[2],
-    label: `${match[1][0].toUpperCase()}${match[1].slice(1)} ${match[2]}`,
-    note: "Spotify link captured for context. Browser-side waveform analysis still requires a real audio file upload.",
-  };
+function dot(left, right) {
+  let total = 0;
+  for (let index = 0; index < left.length; index += 1) total += left[index] * right[index];
+  return total;
 }
 
-function loadAnnotations() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.warn("Could not load annotations", error);
-    return [];
-  }
+function matVec(matrix, vector) {
+  return matrix.map((row) => dot(row, vector));
 }
 
-function persistAnnotations() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.annotations));
-  } catch (error) {
-    console.warn("Could not persist annotations", error);
-  }
+function norm(vector) {
+  return Math.sqrt(dot(vector, vector));
 }
 
-function csvToRows(text) {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((item) => item.trim());
-  return lines.slice(1).map((line) => {
-    const cells = line.split(",");
-    return Object.fromEntries(
-      headers.map((header, index) => [header, cells[index] === undefined ? "" : cells[index].trim()])
-    );
-  });
+function withIndefiniteArticle(label) {
+  const value = String(label || "");
+  return /^[aeiou]/i.test(value) ? `an ${value}` : `a ${value}`;
 }
+
+// ─── FFT ─────────────────────────────────────────────────────────────────────
 
 function nextPow2(value) {
   let power = 1;
@@ -561,6 +220,8 @@ function fftReal(samples) {
   return magnitudes;
 }
 
+// ─── Signal processing ───────────────────────────────────────────────────────
+
 function downmix(buffer) {
   const channelCount = buffer.numberOfChannels;
   const mono = new Float32Array(buffer.length);
@@ -594,7 +255,250 @@ function extractFrames(signal, frameSize, hopSize) {
   return frames;
 }
 
-function analyzeFrames(signal, sampleRate, config) {
+function hzToMel(value) {
+  return 2595 * Math.log10(1 + value / 700);
+}
+
+function melToHz(value) {
+  return 700 * (10 ** (value / 2595) - 1);
+}
+
+function createMelFilterBank(sampleRate, fftSize, bandCount = 24, lowHz = 40, highHz = 8000) {
+  const nyquist = sampleRate / 2;
+  const maxHz = Math.min(highHz, nyquist);
+  const lowMel = hzToMel(lowHz);
+  const highMel = hzToMel(maxHz);
+  const melPoints = Array.from({ length: bandCount + 2 }, (_, index) =>
+    lowMel + ((highMel - lowMel) * index) / (bandCount + 1)
+  );
+  const hzPoints = melPoints.map(melToHz);
+  const bins = hzPoints.map((hz) => Math.floor((fftSize + 1) * hz / sampleRate));
+  const filters = Array.from({ length: bandCount }, () => new Float64Array(fftSize / 2 + 1));
+
+  for (let band = 0; band < bandCount; band += 1) {
+    const left = bins[band];
+    const center = bins[band + 1];
+    const right = bins[band + 2];
+    for (let bin = left; bin < center; bin += 1) {
+      if (bin >= 0 && bin < filters[band].length && center !== left) {
+        filters[band][bin] = (bin - left) / (center - left);
+      }
+    }
+    for (let bin = center; bin < right; bin += 1) {
+      if (bin >= 0 && bin < filters[band].length && right !== center) {
+        filters[band][bin] = (right - bin) / (right - center);
+      }
+    }
+  }
+
+  return filters;
+}
+
+function dctTypeII(values, coefficientCount = 13) {
+  const result = new Array(coefficientCount).fill(0);
+  const scale = Math.PI / Math.max(values.length, 1);
+  for (let coefficient = 0; coefficient < coefficientCount; coefficient += 1) {
+    let total = 0;
+    for (let index = 0; index < values.length; index += 1) {
+      total += values[index] * Math.cos((index + 0.5) * coefficient * scale);
+    }
+    result[coefficient] = total;
+  }
+  return result;
+}
+
+function inferKeyFromChroma(chroma) {
+  const labels = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+  const majorTemplate = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+  const minorTemplate = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+  const total = chroma.reduce((sum, value) => sum + value, 0) || 1;
+  const normalized = chroma.map((value) => value / total);
+  let best = { key: "Unknown", scale: "unknown", strength: 0 };
+
+  for (let shift = 0; shift < 12; shift += 1) {
+    const majorScore = normalized.reduce(
+      (sum, value, index) => sum + value * majorTemplate[(index - shift + 12) % 12],
+      0
+    );
+    if (majorScore > best.strength) {
+      best = { key: labels[shift], scale: "major", strength: majorScore };
+    }
+    const minorScore = normalized.reduce(
+      (sum, value, index) => sum + value * minorTemplate[(index - shift + 12) % 12],
+      0
+    );
+    if (minorScore > best.strength) {
+      best = { key: labels[shift], scale: "minor", strength: minorScore };
+    }
+  }
+
+  return best;
+}
+
+function pooledFrameStep(frameCount, targetCount = 192) {
+  return Math.max(1, Math.ceil(frameCount / Math.max(targetCount, 1)));
+}
+
+function computeRecurrenceSummary(mfccFrames, targetCount = 192) {
+  if (!mfccFrames.length) {
+    return {
+      meanAffinity: 0,
+      frameCount: 0,
+      stride: 1,
+      strongestLink: 0,
+    };
+  }
+
+  const stride = pooledFrameStep(mfccFrames.length, targetCount);
+  const pooled = [];
+  for (let index = 0; index < mfccFrames.length; index += stride) {
+    const slice = mfccFrames.slice(index, index + stride);
+    const meanVector = new Array(mfccFrames[0].length).fill(0);
+    for (const row of slice) {
+      for (let dim = 0; dim < meanVector.length; dim += 1) meanVector[dim] += row[dim];
+    }
+    for (let dim = 0; dim < meanVector.length; dim += 1) meanVector[dim] /= slice.length;
+    pooled.push(meanVector);
+  }
+
+  if (pooled.length <= 1) {
+    return {
+      meanAffinity: 1,
+      frameCount: pooled.length,
+      stride,
+      strongestLink: 1,
+    };
+  }
+
+  const distances = [];
+  for (let i = 0; i < pooled.length; i += 1) {
+    for (let j = i + 1; j < pooled.length; j += 1) {
+      let sum = 0;
+      for (let dim = 0; dim < pooled[i].length; dim += 1) {
+        const diff = pooled[i][dim] - pooled[j][dim];
+        sum += diff * diff;
+      }
+      distances.push(Math.sqrt(sum));
+    }
+  }
+
+  const sigma = percentile(distances, 0.5) || 1;
+  let affinitySum = 0;
+  let affinityCount = 0;
+  let strongestLink = 0;
+  for (let i = 0; i < pooled.length; i += 1) {
+    for (let j = i + 1; j < pooled.length; j += 1) {
+      let sum = 0;
+      for (let dim = 0; dim < pooled[i].length; dim += 1) {
+        const diff = pooled[i][dim] - pooled[j][dim];
+        sum += diff * diff;
+      }
+      const affinity = Math.exp(-sum / (2 * sigma * sigma));
+      affinitySum += affinity;
+      affinityCount += 1;
+      strongestLink = Math.max(strongestLink, affinity);
+    }
+  }
+
+  return {
+    meanAffinity: affinitySum / Math.max(affinityCount, 1),
+    frameCount: pooled.length,
+    stride,
+    strongestLink,
+  };
+}
+
+function computeAdvancedBrowserAnalysis(signal, sampleRate, config) {
+  const frameSize = config.frameSize;
+  const hopSize = config.hopSize;
+  const window = new Float32Array(frameSize);
+  for (let index = 0; index < frameSize; index += 1) {
+    window[index] = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (frameSize - 1));
+  }
+  const frames = extractFrames(signal, frameSize, hopSize);
+  const hzPerBin = sampleRate / frameSize;
+  const melFilters = createMelFilterBank(sampleRate, frameSize, 24);
+  const meanChroma = new Float64Array(12);
+  const meanHpcp = new Float64Array(36);
+  const cqtLike = new Float64Array(48);
+  const mfccFrames = [];
+  const chromaFrames = [];
+
+  for (const source of frames) {
+    const windowed = new Float32Array(frameSize);
+    for (let index = 0; index < frameSize; index += 1) {
+      windowed[index] = source[index] * window[index];
+    }
+    const magnitude = fftReal(windowed);
+    const power = new Float64Array(magnitude.length);
+    for (let bin = 0; bin < magnitude.length; bin += 1) {
+      power[bin] = magnitude[bin] * magnitude[bin];
+    }
+
+    const melBands = melFilters.map((filter) => {
+      let total = 0;
+      for (let bin = 0; bin < filter.length; bin += 1) total += power[bin] * filter[bin];
+      return Math.log10(1 + total);
+    });
+    const mfcc = dctTypeII(melBands, 13);
+    mfccFrames.push(mfcc);
+
+    const chromaFrame = new Float64Array(12);
+    const hpcpFrame = new Float64Array(36);
+    const cqtFrame = new Float64Array(48);
+    for (let bin = 1; bin < power.length; bin += 1) {
+      const freq = bin * hzPerBin;
+      if (freq < 27.5 || freq > Math.min(sampleRate / 2, 5000)) continue;
+      const midi = 69 + 12 * Math.log2(freq / 440);
+      if (!Number.isFinite(midi)) continue;
+      const chromaIndex = ((Math.round(midi) % 12) + 12) % 12;
+      const hpcpIndex = ((Math.round(midi * 3) % 36) + 36) % 36;
+      const cqtIndex = clamp(Math.round((midi - 24) * (48 / 72)), 0, 47);
+      chromaFrame[chromaIndex] += power[bin];
+      hpcpFrame[hpcpIndex] += power[bin];
+      cqtFrame[cqtIndex] += power[bin];
+    }
+
+    chromaFrames.push(Array.from(chromaFrame));
+    for (let index = 0; index < 12; index += 1) meanChroma[index] += chromaFrame[index];
+    for (let index = 0; index < 36; index += 1) meanHpcp[index] += hpcpFrame[index];
+    for (let index = 0; index < 48; index += 1) cqtLike[index] += cqtFrame[index];
+  }
+
+  const normalize = (arrayLike) => {
+    const total = Array.from(arrayLike).reduce((sum, value) => sum + value, 0) || 1;
+    return Array.from(arrayLike, (value) => value / total);
+  };
+
+  const chroma = normalize(meanChroma);
+  const hpcp = normalize(meanHpcp);
+  const cqt = normalize(cqtLike);
+  const keyEstimate = inferKeyFromChroma(chroma);
+  const recurrence = computeRecurrenceSummary(mfccFrames);
+  const strongestCqtBins = cqt
+    .map((value, index) => ({ bin: index, strength: value }))
+    .sort((left, right) => right.strength - left.strength)
+    .slice(0, 6);
+
+  return {
+    mean_mfcc: mfccFrames.length
+      ? mfccFrames[0].map((_, dim) => mean(mfccFrames.map((row) => row[dim])))
+      : new Array(13).fill(0),
+    mean_chroma: chroma,
+    mean_hpcp: hpcp,
+    cqt_profile: cqt,
+    cqt_top_bins: strongestCqtBins,
+    estimated_key: keyEstimate.key,
+    estimated_scale: keyEstimate.scale,
+    key_strength: keyEstimate.strength,
+    recurrence_mean_affinity: recurrence.meanAffinity,
+    recurrence_frame_count: recurrence.frameCount,
+    recurrence_stride: recurrence.stride,
+    recurrence_strongest_link: recurrence.strongestLink,
+  };
+}
+
+async function analyzeFrames(signal, sampleRate, config, onProgress) {
   const frameSize = config.frameSize;
   const hopSize = config.hopSize;
   const window = new Float32Array(frameSize);
@@ -716,6 +620,14 @@ function analyzeFrames(signal, sampleRate, config) {
       phase_gradient_var: localPhaseVariance / Math.max(localPhaseCount, 1),
       attack_strength: attackStrength,
     });
+
+    // Yield to browser every 32 frames so the orb can repaint during analysis
+    if (onProgress && frameIndex % 32 === 31) {
+      const n = frameIndex + 1;
+      const partial = Float64Array.from(averageSpectrum, (v) => v / n);
+      onProgress(partial, n / frames.length);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
   }
 
   for (let index = 0; index < averageSpectrum.length; index += 1) {
@@ -763,7 +675,6 @@ function modulationAnalysis(signal, sampleRate, config) {
   }
 
   return {
-    envelope: centered.map((value, index) => ({ time_s: index / actualRate, envelope: value })),
     modulationFreqs: freqs,
     modulationSpectrum: Array.from(spectrum),
     bands: {
@@ -784,20 +695,6 @@ function zscoreColumns(matrix) {
     stdevs[col] = Math.sqrt(mean(matrix.map((row) => (row[col] - means[col]) ** 2))) || 1;
   }
   return matrix.map((row) => row.map((value, col) => (value - means[col]) / stdevs[col]));
-}
-
-function dot(left, right) {
-  let total = 0;
-  for (let index = 0; index < left.length; index += 1) total += left[index] * right[index];
-  return total;
-}
-
-function matVec(matrix, vector) {
-  return matrix.map((row) => dot(row, vector));
-}
-
-function norm(vector) {
-  return Math.sqrt(dot(vector, vector));
 }
 
 function powerIteration(matrix, iterations = 32) {
@@ -1020,336 +917,39 @@ function topPeaks(freqs, spectrum) {
   return entries.sort((left, right) => right.prominence - left.prominence).slice(0, 10);
 }
 
-function normalizeTimeColumn(rows) {
-  if (!rows?.length) return [];
-  const keys = Object.keys(rows[0]);
-  const timeKey =
-    keys.find((key) => ["time_s", "time", "timestamp", "seconds"].includes(key)) || keys.find((key) => key === "time_ms");
-  if (!timeKey) return [];
-  const normalized = rows
-    .map((row) => {
-      const timeValue = Number.parseFloat(row[timeKey]);
-      return {
-        ...row,
-        time_s: timeKey === "time_ms" ? timeValue / 1000 : timeValue,
-      };
-    })
-    .filter((row) => Number.isFinite(row.time_s))
-    .sort((left, right) => left.time_s - right.time_s);
-  const deduped = [];
-  for (const row of normalized) {
-    if (deduped.length && deduped[deduped.length - 1].time_s === row.time_s) {
-      deduped[deduped.length - 1] = row;
-    } else {
-      deduped.push(row);
-    }
-  }
-  return deduped;
-}
+// ─── Feature interpretation ───────────────────────────────────────────────────
 
-function interpolate(sourceRows, key, timeS) {
-  if (sourceRows.length < 2) return Number.NaN;
-  if (timeS < sourceRows[0].time_s || timeS > sourceRows[sourceRows.length - 1].time_s) {
-    return Number.NaN;
-  }
-  let index = 0;
-  while (index < sourceRows.length - 1 && sourceRows[index + 1].time_s < timeS) {
-    index += 1;
-  }
-  const left = sourceRows[index];
-  const right = sourceRows[Math.min(index + 1, sourceRows.length - 1)];
-  const leftValue = Number.parseFloat(left[key]);
-  const rightValue = Number.parseFloat(right[key]);
-  if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) return Number.NaN;
-  if (left.time_s === right.time_s) return leftValue;
-  const ratio = (timeS - left.time_s) / (right.time_s - left.time_s);
-  return leftValue * (1 - ratio) + rightValue * ratio;
-}
-
-function pearson(left, right) {
-  const paired = left
-    .map((value, index) => [value, right[index]])
-    .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b));
-  if (paired.length < 8) return Number.NaN;
-  const leftMean = mean(paired.map((item) => item[0]));
-  const rightMean = mean(paired.map((item) => item[1]));
-  let numerator = 0;
-  let leftDen = 0;
-  let rightDen = 0;
-  for (const [a, b] of paired) {
-    numerator += (a - leftMean) * (b - rightMean);
-    leftDen += (a - leftMean) ** 2;
-    rightDen += (b - rightMean) ** 2;
-  }
-  return numerator / Math.sqrt(Math.max(leftDen * rightDen, 1e-12));
-}
-
-function correlateBiosignal(features, rows, label, options = {}) {
-  const normalized = normalizeTimeColumn(rows);
-  if (!normalized.length) {
-    return { label, note: "No usable time column detected.", top_correlations: [] };
-  }
-
-  const numericKeys = Object.keys(normalized[0]).filter(
-    (key) => key !== "time_s" && normalized.some((row) => Number.isFinite(Number.parseFloat(row[key])))
-  );
-  const audioKeys = Object.keys(features[0] || {}).filter((key) => key !== "time_s");
-  const lags = [];
-  const center = options.centerLagS ?? 0;
-  const window = options.lagWindowS ?? 2;
-  const step = options.lagStepS ?? 0.25;
-  for (let lag = center - window; lag <= center + window + 1e-6; lag += step) {
-    lags.push(Number.parseFloat(lag.toFixed(2)));
-  }
-
-  const results = [];
-  for (const signalKey of numericKeys) {
-    for (const audioKey of audioKeys) {
-      let best = null;
-      for (const lag of lags) {
-        const audioSeries = [];
-        const bioSeries = [];
-        for (const feature of features) {
-          audioSeries.push(feature[audioKey]);
-          bioSeries.push(interpolate(normalized, signalKey, feature.time_s + lag));
-        }
-        const r = pearson(audioSeries, bioSeries);
-        if (!Number.isFinite(r)) continue;
-        if (!best || Math.abs(r) > Math.abs(best.pearson_r)) {
-          best = { biosignal_feature: signalKey, audio_feature: audioKey, pearson_r: r, lag_s: lag };
-        }
-      }
-      if (best) results.push(best);
-    }
-  }
-
+function summarizeReportMetrics(report) {
+  const centroidMean = mean(report.features.map((item) => item.spectral_centroid_hz));
+  const flatnessMean = mean(report.features.map((item) => item.spectral_flatness));
+  const spreadMean = mean(report.features.map((item) => item.spectral_spread_hz));
+  const fluxMean = mean(report.features.map((item) => item.spectral_flux));
+  const attackMean = mean(report.features.map((item) => item.attack_strength));
+  const zcrMean = mean(report.features.map((item) => item.zcr));
+  const phaseMean = mean(report.features.map((item) => item.phase_lock));
+  const rmsMean = mean(report.features.map((item) => item.rms));
+  const attackDensity = report.evidence.scores.attack_density || 0;
+  const repetitionIndex = report.evidence.scores.repetition_index || 0;
+  const modulationHz = report.modulationBands.dominant_modulation_hz || 0;
+  const dominantPeak = report.topPeaks[0]?.freq_hz || 0;
+  const recurrenceAffinity = report.advanced?.recurrence_mean_affinity || 0;
+  const keyStrength = report.advanced?.key_strength || 0;
   return {
-    label,
-    note: "Exploratory only. These are correlation peaks, not proof of entrainment or information transfer.",
-    top_correlations: results.sort((left, right) => Math.abs(right.pearson_r) - Math.abs(left.pearson_r)).slice(0, 14),
+    centroidMean,
+    flatnessMean,
+    spreadMean,
+    fluxMean,
+    attackMean,
+    zcrMean,
+    phaseMean,
+    rmsMean,
+    attackDensity,
+    repetitionIndex,
+    modulationHz,
+    dominantPeak,
+    recurrenceAffinity,
+    keyStrength,
   };
-}
-
-function validateBiosignalRows(rows, label) {
-  const normalized = normalizeTimeColumn(rows);
-  if (!normalized.length) return `${label}: no valid time axis found.`;
-  const numericKeys = Object.keys(normalized[0]).filter(
-    (key) => key !== "time_s" && normalized.some((row) => Number.isFinite(Number.parseFloat(row[key])))
-  );
-  const duration = normalized[normalized.length - 1].time_s - normalized[0].time_s;
-  return `${label}: ${normalized.length} rows across ${duration.toFixed(2)} s with ${numericKeys.length} numeric channels.`;
-}
-
-function buildCorrelations(features) {
-  const correlations = [];
-  if (state.eegRows) {
-    correlations.push(
-      correlateBiosignal(features, state.eegRows, "EEG", {
-        centerLagS: state.config.biosignalLagCenterS,
-        lagWindowS: state.config.biosignalLagWindowS,
-      })
-    );
-  }
-  if (state.emfRows) {
-    correlations.push(
-      correlateBiosignal(features, state.emfRows, "EMF", {
-        centerLagS: state.config.biosignalLagCenterS,
-        lagWindowS: state.config.biosignalLagWindowS,
-      })
-    );
-  }
-  return correlations;
-}
-
-function encodeWavBlob(signal, sampleRate) {
-  const dataLength = signal.length * 2;
-  const buffer = new ArrayBuffer(44 + dataLength);
-  const view = new DataView(buffer);
-  let offset = 0;
-  const writeString = (value) => {
-    for (let index = 0; index < value.length; index += 1) {
-      view.setUint8(offset + index, value.charCodeAt(index));
-    }
-    offset += value.length;
-  };
-  writeString("RIFF");
-  view.setUint32(offset, 36 + dataLength, true);
-  offset += 4;
-  writeString("WAVE");
-  writeString("fmt ");
-  view.setUint32(offset, 16, true);
-  offset += 4;
-  view.setUint16(offset, 1, true);
-  offset += 2;
-  view.setUint16(offset, 1, true);
-  offset += 2;
-  view.setUint32(offset, sampleRate, true);
-  offset += 4;
-  view.setUint32(offset, sampleRate * 2, true);
-  offset += 4;
-  view.setUint16(offset, 2, true);
-  offset += 2;
-  view.setUint16(offset, 16, true);
-  offset += 2;
-  writeString("data");
-  view.setUint32(offset, dataLength, true);
-  offset += 4;
-  for (let index = 0; index < signal.length; index += 1) {
-    const sample = clamp(signal[index], -1, 1);
-    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-    offset += 2;
-  }
-  return new Blob([buffer], { type: "audio/wav" });
-}
-
-function resampleSignal(signal, fromRate, toRate) {
-  if (fromRate === toRate) return signal;
-  const length = Math.max(1, Math.round(signal.length * (toRate / fromRate)));
-  const output = new Float32Array(length);
-  for (let index = 0; index < length; index += 1) {
-    const sourcePosition = (index / Math.max(length - 1, 1)) * Math.max(signal.length - 1, 1);
-    const left = Math.floor(sourcePosition);
-    const right = Math.min(signal.length - 1, Math.ceil(sourcePosition));
-    const mix = sourcePosition - left;
-    output[index] = signal[left] * (1 - mix) + signal[right] * mix;
-  }
-  return output;
-}
-
-async function decodeFile(file) {
-  const arrayBuffer = file.arrayBuffer ? await file.arrayBuffer() : await file;
-  return audioContext.decodeAudioData(arrayBuffer.slice(0));
-}
-
-async function fetchDefaultFiles() {
-  const loaded = [];
-  for (const filename of DEFAULT_TRACKS) {
-    try {
-      const response = await fetch(encodeURI(filename));
-      if (!response.ok) continue;
-      const blob = await response.blob();
-      loaded.push(new File([blob], filename, { type: blob.type || "audio/mpeg" }));
-    } catch (error) {
-      console.warn("Could not auto-load", filename, error);
-    }
-  }
-  return loaded;
-}
-
-function buildReportFromSignal({ name, mono, sampleRate, channels, audioUrl, isDerived = false, sourceRefs = [] }) {
-  const frameReport = analyzeFrames(mono, sampleRate, state.config);
-  const modulation = modulationAnalysis(mono, sampleRate, state.config);
-  const embeddings = computeEmbeddings(frameReport.features);
-  const segmentation = detectSegments(embeddings, frameReport.features, state.config);
-  const symbolic = buildStructuralCodebook(frameReport.features, embeddings, modulation.bands, state.config);
-  const evidence = buildEvidenceModel(frameReport.features, modulation.bands, symbolic, segmentation);
-
-  return {
-    id: `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`,
-    name,
-    duration_s: mono.length / sampleRate,
-    sample_rate_hz: sampleRate,
-    channels,
-    features: frameReport.features,
-    modulationBands: modulation.bands,
-    modulationFreqs: modulation.modulationFreqs,
-    modulationSpectrum: modulation.modulationSpectrum,
-    topPeaks: topPeaks(frameReport.spectrumFreqs, frameReport.averageSpectrum),
-    symbolic,
-    evidence,
-    segmentation,
-    correlations: buildCorrelations(frameReport.features),
-    averageSpectrum: Array.from(frameReport.averageSpectrum),
-    spectrumFreqs: frameReport.spectrumFreqs,
-    monoSignal: mono,
-    audio_url: audioUrl,
-    isDerived,
-    source_refs: sourceRefs,
-  };
-}
-
-async function analyzeFile(file) {
-  const buffer = await decodeFile(file);
-  const mono = downmix(buffer);
-  const audioUrl = URL.createObjectURL(file);
-  return buildReportFromSignal({
-    name: file.name,
-    mono,
-    sampleRate: buffer.sampleRate,
-    channels: buffer.numberOfChannels,
-    audioUrl,
-  });
-}
-
-async function loadSelectedFiles() {
-  if (audioInput.files && audioInput.files.length) return [...audioInput.files];
-  return fetchDefaultFiles();
-}
-
-async function parseOptionalCsv(input) {
-  if (!input.files || !input.files.length) return null;
-  return csvToRows(await input.files[0].text());
-}
-
-function cleanupReportUrls(reports) {
-  for (const report of reports) {
-    if (report?.audio_url?.startsWith("blob:")) URL.revokeObjectURL(report.audio_url);
-  }
-}
-
-function getAllReports() {
-  return [...state.reports, ...state.derivedReports];
-}
-
-function getReportById(id) {
-  return getAllReports().find((report) => report.id === id) || null;
-}
-
-function getSelectedTrack() {
-  return getReportById(state.selectedTrackId) || getAllReports()[0] || null;
-}
-
-function getCurrentTime() {
-  if (!audioPlayer.src || audioPlayer.dataset.trackId !== state.selectedTrackId) return 0;
-  return audioPlayer.currentTime || 0;
-}
-
-function getNearestFeature(report, timeS) {
-  if (!report?.features?.length) return null;
-  let best = report.features[0];
-  let bestDistance = Math.abs(best.time_s - timeS);
-  for (const item of report.features) {
-    const distance = Math.abs(item.time_s - timeS);
-    if (distance < bestDistance) {
-      best = item;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
-function getFocusRange(report) {
-  const timeS = clamp(getCurrentTime(), 0, report?.duration_s || 0);
-  const half = state.focusWindowS / 2;
-  return {
-    start: clamp(timeS - half, 0, report?.duration_s || 0),
-    end: clamp(timeS + half, 0, report?.duration_s || 0),
-  };
-}
-
-function getSegmentWindow(report, timeS) {
-  if (!report) return { start: 0, end: 0 };
-  const boundaries = report.segmentation.boundaries.map((item) => item.time_s).sort((a, b) => a - b);
-  let start = 0;
-  let end = report.duration_s;
-  for (const boundary of boundaries) {
-    if (boundary <= timeS) start = boundary;
-    if (boundary > timeS) {
-      end = boundary;
-      break;
-    }
-  }
-  return { start, end };
 }
 
 function getDominantBand(report) {
@@ -1413,80 +1013,7 @@ function analyzeUniversalTuning(report) {
     .sort((left, right) => left.absolute_cents - right.absolute_cents)
     .slice(0, 6);
 
-  return {
-    strongest_match: matches[0] || null,
-    matches,
-    note:
-      "This checks whether dominant spectral peaks sit near integer multiples of common reference tunings such as 432 Hz, 440 Hz, and 528 Hz. It is an approximate proximity test, not proof of intentional tuning.",
-  };
-}
-
-function analyzeHarmonicRatios(report) {
-  const targets = [
-    { label: "golden_ratio", value: (1 + Math.sqrt(5)) / 2 },
-    { label: "fibonacci_5_3", value: 5 / 3 },
-    { label: "fibonacci_8_5", value: 8 / 5 },
-    { label: "fibonacci_13_8", value: 13 / 8 },
-    { label: "perfect_fifth", value: 3 / 2 },
-    { label: "octave", value: 2 },
-  ];
-  const peaks = report.topPeaks
-    .map((peak) => peak.freq_hz)
-    .filter((value) => value >= 40)
-    .slice(0, 8);
-  const matches = [];
-
-  for (let index = 0; index < peaks.length; index += 1) {
-    for (let compare = index + 1; compare < peaks.length; compare += 1) {
-      const ratio = peaks[compare] / peaks[index];
-      const best = targets
-        .map((target) => ({
-          ratio_label: target.label,
-          target_ratio: target.value,
-          observed_ratio: ratio,
-          deviation_percent: Math.abs((ratio - target.value) / target.value) * 100,
-          base_hz: peaks[index],
-          upper_hz: peaks[compare],
-        }))
-        .sort((left, right) => left.deviation_percent - right.deviation_percent)[0];
-      matches.push(best);
-    }
-  }
-
-  return {
-    matches: matches.sort((left, right) => left.deviation_percent - right.deviation_percent).slice(0, 8),
-    note:
-      "These are the closest pairwise peak ratios against golden-ratio and Fibonacci-adjacent intervals. Small deviation suggests resemblance, not exact geometric causation.",
-  };
-}
-
-function summarizeReportMetrics(report) {
-  const centroidMean = mean(report.features.map((item) => item.spectral_centroid_hz));
-  const flatnessMean = mean(report.features.map((item) => item.spectral_flatness));
-  const spreadMean = mean(report.features.map((item) => item.spectral_spread_hz));
-  const fluxMean = mean(report.features.map((item) => item.spectral_flux));
-  const attackMean = mean(report.features.map((item) => item.attack_strength));
-  const zcrMean = mean(report.features.map((item) => item.zcr));
-  const phaseMean = mean(report.features.map((item) => item.phase_lock));
-  const rmsMean = mean(report.features.map((item) => item.rms));
-  const attackDensity = report.evidence.scores.attack_density || 0;
-  const repetitionIndex = report.evidence.scores.repetition_index || 0;
-  const modulationHz = report.modulationBands.dominant_modulation_hz || 0;
-  const dominantPeak = report.topPeaks[0]?.freq_hz || 0;
-  return {
-    centroidMean,
-    flatnessMean,
-    spreadMean,
-    fluxMean,
-    attackMean,
-    zcrMean,
-    phaseMean,
-    rmsMean,
-    attackDensity,
-    repetitionIndex,
-    modulationHz,
-    dominantPeak,
-  };
+  return { strongest_match: matches[0] || null, matches };
 }
 
 function describeVibe(report) {
@@ -1558,7 +1085,11 @@ function describeSoundQuality(report) {
         : metrics.attackDensity > 0.15 && metrics.zcrMean > 0.06
           ? "Heavy / Distorted"
           : "Warm / Pure";
-  return { brightness, texture, dissonance: dissonanceHint };
+  const harmonicField =
+    metrics.keyStrength >= 0.34
+      ? `key field favors ${(report.advanced?.estimated_key || "n/a")} ${(report.advanced?.estimated_scale || "")}`.trim()
+      : "key field is ambiguous";
+  return { brightness, texture, dissonance: dissonanceHint, harmonicField };
 }
 
 function describeTuningLabel(report) {
@@ -1571,118 +1102,27 @@ function describeTuningLabel(report) {
   return `Closest to ${best.reference_hz}Hz family`;
 }
 
-function describeBodyResponse(report) {
-  const dominantBand = getDominantBand(report);
-  const strongestCorrelation = report.correlations
-    .flatMap((group) => group.top_correlations || [])
-    .sort((left, right) => Math.abs(right.pearson_r) - Math.abs(left.pearson_r))[0];
-
-  let stateLabel = "Open Listening";
-  if (dominantBand === "beta" || dominantBand === "gamma") stateLabel = "Focus Mode";
-  else if (dominantBand === "alpha" || dominantBand === "theta") stateLabel = "Meditation / Trance";
-  else if (dominantBand === "delta") stateLabel = "Grounded / Heavy Drift";
-
-  const syncLabel =
-    strongestCorrelation && Math.abs(strongestCorrelation.pearson_r) >= 0.45
-      ? `Possible nervous-system sync cue via ${strongestCorrelation.audio_feature} vs ${strongestCorrelation.biosignal_feature}`
-      : "No strong biosignal lock detected";
-
-  return { stateLabel, syncLabel, dominantBand };
-}
-
 function buildHumanReadout(report) {
   const cosmic = classifyTimbreSignature(report);
   const quality = describeSoundQuality(report);
-  const body = describeBodyResponse(report);
+  const dominantBand = getDominantBand(report);
+  let bodyState = "Open Listening";
+  if (dominantBand === "beta" || dominantBand === "gamma") bodyState = "Focus Mode";
+  else if (dominantBand === "alpha" || dominantBand === "theta") bodyState = "Meditation / Trance";
+  else if (dominantBand === "delta") bodyState = "Grounded / Heavy Drift";
+
   return {
     vibe: describeVibe(report),
     quality: `${quality.brightness} • ${quality.texture}`,
-    body: body.stateLabel,
+    body: bodyState,
     tuning: describeTuningLabel(report),
     spiritual: cosmic.label,
     details: {
-      clarity: quality.brightness === "Bright" ? "Celestial clarity" : quality.brightness === "Dark" ? "Grounding depth" : "Centered clarity",
-      vibrational_urgency: report.evidence.scores.attack_density > 0.15 ? "High" : report.evidence.scores.attack_density > 0.08 ? "Moderate" : "Low",
       harmony_alignment: quality.dissonance === "stable harmonic spacing" ? "Aligned" : "Tension present",
-      biosignal_note: body.syncLabel,
       dissonance: quality.dissonance,
+      harmonic_field: quality.harmonicField,
     },
   };
-}
-
-function formatCosmicSignatureText(report) {
-  const signature = classifyTimbreSignature(report);
-  const quality = describeSoundQuality(report);
-  return [
-    `Spectral signature for ${report.name}:`,
-    `${signature.label}.`,
-    ``,
-    `In plain English: this sound feels ${describeVibe(report).toLowerCase()}. It leans ${quality.brightness.toLowerCase()} and ${quality.texture.toLowerCase()}, with ${quality.dissonance}.`,
-    `The strongest grounding or shimmer anchor sits near ${signature.dominant_peak_hz.toFixed(1)} Hz, and the dominant modulation band is ${String(signature.dominant_band).toUpperCase()}.`,
-  ].join("\n");
-}
-
-function formatUniversalTuningText(report) {
-  const tuning = analyzeUniversalTuning(report);
-  const best = tuning.strongest_match;
-  if (!best) {
-    return `Universal tuning read for ${report.name}:\nNo strong tuning family match was detected in the current peak set.`;
-  }
-  const closeness =
-    best.absolute_cents <= 12 ? "very close" : best.absolute_cents <= 35 ? "fairly close" : "only loosely related";
-  return [
-    `Universal tuning read for ${report.name}:`,
-    `${describeTuningLabel(report)}.`,
-    ``,
-    `The clearest match is ${best.observed_peak_hz.toFixed(1)} Hz, which sits ${closeness} to the ${best.reference_hz} Hz family at ${best.target_hz.toFixed(1)} Hz.`,
-    `Offset: ${best.cents_off > 0 ? "+" : ""}${best.cents_off.toFixed(2)} cents.`,
-    `This is a proximity check, not proof that the whole piece was intentionally tuned that way.`,
-  ].join("\n");
-}
-
-function formatHarmonicRatiosText(report) {
-  const ratioReport = analyzeHarmonicRatios(report);
-  const top = ratioReport.matches.slice(0, 3);
-  if (!top.length) {
-    return `Harmonic ratio read for ${report.name}:\nThere were not enough strong peaks to compare intervals.`;
-  }
-  return [
-    `Harmonic ratio read for ${report.name}:`,
-    ...top.map(
-      (match, index) =>
-        `${index + 1}. ${match.base_hz.toFixed(1)} Hz to ${match.upper_hz.toFixed(1)} Hz most closely resembles ${match.ratio_label.replaceAll("_", " ")} with ${match.deviation_percent.toFixed(2)}% deviation.`
-    ),
-    ``,
-    `These are similarity reads, not claims of exact sacred geometry.`,
-  ].join("\n");
-}
-
-function formatMoodProfileText(report, profile, score) {
-  const readout = buildHumanReadout(report);
-  let verdict = "weak match";
-  if (score >= 80) verdict = "strong match";
-  else if (score >= 60) verdict = "moderate match";
-  else if (score >= 40) verdict = "partial match";
-
-  return [
-    `${profile.label} profile for ${report.name}: ${verdict}.`,
-    `Compatibility score: ${score.toFixed(1)} / 100.`,
-    ``,
-    `${profile.language}`,
-    `Right now the track reads as ${readout.vibe.toLowerCase()}, ${readout.quality.toLowerCase()}, and ${readout.tuning.toLowerCase()}.`,
-    `Body state read: ${readout.body}.`,
-  ].join("\n");
-}
-
-function getComparisonPair() {
-  const reports = getAllReports().filter((report) => !report.isDerived);
-  if (reports.length < 2) return [reports[0] || null, null];
-  const left = getReportById(state.comparison.leftId) || reports[0];
-  const right =
-    getReportById(state.comparison.rightId) ||
-    reports.find((report) => report.id !== left.id) ||
-    reports[1];
-  return [left, right];
 }
 
 function buildStateEngineering(report) {
@@ -1812,11 +1252,6 @@ function buildEnergyRead(report) {
   };
 }
 
-function withIndefiniteArticle(label) {
-  const value = String(label || "");
-  return /^[aeiou]/i.test(value) ? `an ${value}` : `a ${value}`;
-}
-
 function buildCompareRead(left, right) {
   if (!left || !right) {
     return {
@@ -1835,11 +1270,19 @@ function buildCompareRead(left, right) {
   const brightnessGap = Math.abs(leftMetrics.centroidMean - rightMetrics.centroidMean);
   const attackGap = Math.abs(leftMetrics.attackDensity - rightMetrics.attackDensity);
   const repetitionGap = Math.abs(leftMetrics.repetitionIndex - rightMetrics.repetitionIndex);
+  const recurrenceGap = Math.abs(leftMetrics.recurrenceAffinity - rightMetrics.recurrenceAffinity);
+  const keyMatch =
+    left.advanced?.estimated_key &&
+    left.advanced?.estimated_key === right.advanced?.estimated_key &&
+    left.advanced?.estimated_scale === right.advanced?.estimated_scale;
 
   const summary = [
     `${brighter.name} comes across brighter and more top-end forward.`,
     `${harder.name} hits harder on transients and structural friction.`,
     `${steadier.name} is the more pattern-locked track, while ${rougher.name} reads rougher at the waveform level.`,
+    keyMatch
+      ? `Both tracks center on ${left.advanced.estimated_key} ${left.advanced.estimated_scale}, so the harmonic center is relatively aligned.`
+      : "Their harmonic centers diverge, so the contrast is not just energy-deep but tonal too.",
   ].join(" ");
 
   return {
@@ -1860,6 +1303,16 @@ function buildCompareRead(left, right) {
         label: "Pattern Lock",
         value: repetitionGap < 0.0005 ? "< 0.001" : repetitionGap.toFixed(3),
         note: repetitionGap < 0.0005 ? "Virtually tied on repetition" : `${steadier.name} repeats more tightly`,
+      },
+      {
+        label: "Recurrence",
+        value: recurrenceGap < 0.0005 ? "< 0.001" : recurrenceGap.toFixed(3),
+        note:
+          recurrenceGap < 0.0005
+            ? "Virtually tied on MFCC recurrence"
+            : leftMetrics.recurrenceAffinity >= rightMetrics.recurrenceAffinity
+              ? `${left.name} has the stickier MFCC recurrence field`
+              : `${right.name} has the stickier MFCC recurrence field`,
       },
     ],
   };
@@ -1902,6 +1355,371 @@ function buildCollisionRead(left, right) {
   return { score: harmonyScore, label, summary };
 }
 
+function buildStudySoundCoach(report) {
+  const metrics = summarizeReportMetrics(report);
+  const energy = buildEnergyRead(report);
+  const stateScore = buildStateEngineering(report);
+  const vibe = describeVibe(report);
+  const harmonicField =
+    report.advanced?.key_strength >= 0.34
+      ? `${report.advanced?.estimated_key || "n/a"} ${report.advanced?.estimated_scale || ""}`.trim()
+      : "ambiguous tonal center";
+
+  const reading = clamp(
+    34 +
+      normalizeScore(metrics.phaseMean, 0.45, 0.95) * 24 +
+      normalizeScore(0.16 - metrics.attackDensity, -0.12, 0.14) * 22 +
+      normalizeScore(1800 - metrics.centroidMean, -2200, 1500) * 14 +
+      normalizeScore(0.2 - metrics.fluxMean, -0.2, 0.16) * 12,
+    0,
+    100
+  );
+  const writing = clamp(
+    28 +
+      normalizeScore(metrics.phaseMean, 0.42, 0.92) * 18 +
+      normalizeScore(metrics.repetitionIndex, 0.02, 0.38) * 18 +
+      normalizeScore(0.18 - metrics.attackDensity, -0.1, 0.14) * 16 +
+      normalizeScore(10 - metrics.modulationHz, -10, 7) * 12,
+    0,
+    100
+  );
+  const coding = clamp(
+    26 +
+      normalizeScore(stateScore.entries.find((entry) => entry.label === "Focus")?.score || 0, 35, 95) * 34 +
+      normalizeScore(metrics.repetitionIndex, 0.03, 0.45) * 18 +
+      normalizeScore(metrics.phaseMean, 0.45, 0.94) * 12 +
+      normalizeScore(metrics.rmsMean, 0.03, 0.17) * 8 -
+      normalizeScore(metrics.flatnessMean, 0.14, 0.44) * 8,
+    0,
+    100
+  );
+  const memorization = clamp(
+    30 +
+      normalizeScore(metrics.repetitionIndex, 0.04, 0.45) * 22 +
+      normalizeScore(0.17 - metrics.attackDensity, -0.1, 0.14) * 18 +
+      normalizeScore(metrics.phaseMean, 0.45, 0.95) * 16 +
+      normalizeScore(7 - Math.abs(metrics.modulationHz - 6), -7, 7) * 10,
+    0,
+    100
+  );
+  const recovery = clamp(
+    24 +
+      normalizeScore(stateScore.entries.find((entry) => entry.label === "Chill")?.score || 0, 35, 95) * 32 +
+      normalizeScore(0.16 - metrics.attackDensity, -0.1, 0.14) * 18 +
+      normalizeScore(1500 - metrics.centroidMean, -2500, 1600) * 14 +
+      normalizeScore(0.16 - metrics.rmsMean, -0.18, 0.12) * 12,
+    0,
+    100
+  );
+
+  const tasks = [
+    {
+      label: "Reading",
+      score: Math.round(reading),
+      note: reading >= 70 ? "Steady enough to sit behind dense material without constantly poking your attention." : "May add more motion than dense reading usually wants.",
+    },
+    {
+      label: "Writing",
+      score: Math.round(writing),
+      note: writing >= 70 ? "Patterned enough to keep you moving while leaving room for language generation." : "Could push too hard or wander too much for drafting.",
+    },
+    {
+      label: "Coding",
+      score: Math.round(coding),
+      note: coding >= 70 ? "Locks into task cadence well and carries enough drive for longer focus blocks." : "Structure is weaker or rougher than ideal for long implementation sessions.",
+    },
+    {
+      label: "Memorization",
+      score: Math.round(memorization),
+      note: memorization >= 70 ? "Repeats and breathes in a way that supports recall rather than surprise." : "Too jumpy or too shapeless to be ideal for flashcards and retention.",
+    },
+    {
+      label: "Recovery",
+      score: Math.round(recovery),
+      note: recovery >= 70 ? "This one cools the system down and gives your attention a chance to unclench." : "Still carries too much tension or motion for real recovery.",
+    },
+  ].sort((left, right) => right.score - left.score);
+
+  const best = tasks[0];
+  const worst = tasks[tasks.length - 1];
+  const headline =
+    best.score >= 78
+      ? `Best fit: ${best.label}`
+      : best.score >= 60
+        ? `Usable for ${best.label.toLowerCase()}`
+        : "Mixed study fit";
+
+  const summary =
+    best.score >= 78
+      ? `${report.name} is strongest for ${best.label.toLowerCase()}. ${worst.label} is the weakest fit, mostly because the track reads ${vibe.toLowerCase()}.`
+      : `${report.name} is not a universal study track. It leans most toward ${best.label.toLowerCase()}, while ${worst.label.toLowerCase()} is the weakest use case.`;
+
+  const cautionFlags = [];
+  if (energy.label === "Explosive" || energy.label === "Aggressive") cautionFlags.push("impact-heavy");
+  if (metrics.attackDensity > 0.14) cautionFlags.push("transient-spiky");
+  if (metrics.spreadMean > 1900 || metrics.flatnessMean > 0.28) cautionFlags.push("texture-distracting");
+  if (metrics.modulationHz > 10) cautionFlags.push("fast-pulsing");
+  if (metrics.recurrenceAffinity > 0.58) cautionFlags.push("high recurrence lock");
+  cautionFlags.push(harmonicField);
+  if (!cautionFlags.length) cautionFlags.push("stable-background");
+
+  return { headline, summary, tasks, cautionFlags };
+}
+
+function buildPlaylistCleanser(reports) {
+  if (!reports.length) {
+    return {
+      headline: "Load a playlist to audit it.",
+      summary: "Dreamscape will flag the tracks that are most likely to break concentration.",
+      tracks: [],
+      safest: null,
+      riskiest: null,
+    };
+  }
+
+  const tracks = reports.map((report) => {
+    const metrics = summarizeReportMetrics(report);
+    const energy = buildEnergyRead(report);
+    const stateScore = buildStateEngineering(report);
+    const shock = energy.shockScore;
+    const studyBreak = clamp(
+      normalizeScore(metrics.attackDensity, 0.03, 0.22) * 24 +
+        normalizeScore(metrics.fluxMean, 0.04, 0.35) * 18 +
+        normalizeScore(metrics.zcrMean, 0.015, 0.12) * 16 +
+        normalizeScore(metrics.spreadMean, 800, 3600) * 14 +
+        normalizeScore(shock, 25, 90) * 18 +
+        normalizeScore(metrics.centroidMean, 900, 4200) * 10,
+      0,
+      100
+    );
+    const studySupport = clamp(
+      normalizeScore(stateScore.entries.find((entry) => entry.label === "Focus")?.score || 0, 35, 95) * 36 +
+        normalizeScore(metrics.phaseMean, 0.42, 0.94) * 18 +
+        normalizeScore(metrics.repetitionIndex, 0.02, 0.45) * 18 +
+        normalizeScore(0.18 - metrics.attackDensity, -0.1, 0.16) * 14 +
+        normalizeScore(0.18 - metrics.flatnessMean, -0.2, 0.14) * 14,
+      0,
+      100
+    );
+
+    const tags = [];
+    if (studyBreak >= 62) tags.push({ label: "breaks focus", tone: "warn" });
+    if (shock >= 60) tags.push({ label: "spike-heavy", tone: "warn" });
+    if (metrics.centroidMean > 2400 || metrics.spreadMean > 2100) tags.push({ label: "top-end busy", tone: "warn" });
+    if (studySupport >= 64) tags.push({ label: "holds concentration", tone: "good" });
+    if (metrics.repetitionIndex >= 0.18) tags.push({ label: "pattern-locked", tone: "good" });
+    if (!tags.length) tags.push({ label: "neutral", tone: "" });
+
+    return {
+      id: report.id,
+      name: report.name,
+      disruption: Math.round(studyBreak),
+      support: Math.round(studySupport),
+      note:
+        studyBreak >= 62
+          ? "Likely to interrupt reading or deep work because it jumps, flashes, or crowds the top end."
+          : studySupport >= 64
+            ? "Safer study pick. It stays more locked-in and less interruption-heavy."
+            : "Middle-of-the-road. Usable, but not a dedicated study weapon.",
+      tags,
+    };
+  });
+
+  const riskiest = [...tracks].sort((left, right) => right.disruption - left.disruption)[0];
+  const safest = [...tracks].sort((left, right) => right.support - left.support)[0];
+  const sorted = [...tracks].sort((left, right) => (right.disruption - right.support) - (left.disruption - left.support));
+
+  return {
+    headline: reports.length > 1 ? "Playlist Cleanser active." : "Single-track cleanser preview.",
+    summary: safest && riskiest
+      ? `${safest.name} is the safest study hold. ${riskiest.name} is the most likely to snap concentration.`
+      : "Load more tracks to compare study safety across a playlist.",
+    tracks: sorted,
+    safest,
+    riskiest,
+  };
+}
+
+function bucketAverage(values, start, end) {
+  const safeStart = Math.max(0, Math.floor(start));
+  const safeEnd = Math.min(values.length, Math.max(safeStart + 1, Math.ceil(end)));
+  let total = 0;
+  for (let index = safeStart; index < safeEnd; index += 1) total += values[index];
+  return total / Math.max(1, safeEnd - safeStart);
+}
+
+function bandAverage(values, sampleRate, fftSize, lowHz, highHz) {
+  const hzPerBin = sampleRate / fftSize;
+  return bucketAverage(values, lowHz / hzPerBin, highHz / hzPerBin);
+}
+
+function getRoomScanAvailability() {
+  if (!window.isSecureContext && location.protocol !== "file:") {
+    return {
+      supported: false,
+      reason: "Room Scan needs a secure context. Open Dreamscape on localhost or HTTPS to use the microphone.",
+    };
+  }
+  if (location.protocol === "file:") {
+    return {
+      supported: false,
+      reason: "Room Scan is blocked on file:// in most browsers. Start the local server and open Dreamscape on http://127.0.0.1:8000.",
+    };
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return {
+      supported: false,
+      reason: "This browser does not expose microphone capture for Room Scan.",
+    };
+  }
+  return { supported: true, reason: "" };
+}
+
+function buildRoomSummary(history, spots) {
+  if (!history.length) {
+    let bestSeat = "Mark multiple spots while walking around to find the calmest seat.";
+    if (spots.length >= 2) {
+      const sortedSpots = [...spots].sort((left, right) => left.focusFit - right.focusFit);
+      const best = sortedSpots[sortedSpots.length - 1];
+      const worst = sortedSpots[0];
+      bestSeat = `${best.label} was the calmest saved position. ${worst.label} was the noisiest.`;
+    } else if (spots.length === 1) {
+      bestSeat = `${spots[0].label} is the only stored spot so far.`;
+    }
+    return {
+      status: "Mic idle",
+      roomTone: "Start a room scan to profile the space.",
+      focusFit: 0,
+      chaosScore: 0,
+      speechScore: 0,
+      rumbleScore: 0,
+      interruptions: "No live room data yet.",
+      hiddenNoises: ["Microphone input is off, so there is no room signature to inspect yet."],
+      bestSeat,
+    };
+  }
+
+  const avg = (key) => mean(history.map((frame) => frame[key] || 0));
+  const chaosScore = Math.round(clamp(avg("chaos") * 100, 0, 100));
+  const speechScore = Math.round(clamp(avg("speech") * 100, 0, 100));
+  const rumbleScore = Math.round(clamp(avg("rumble") * 100, 0, 100));
+  const humScore = avg("hum");
+  const buzzScore = avg("buzz");
+  const keyboardScore = avg("keyboard");
+  const slamScore = avg("slam");
+  const focusFit = Math.round(clamp(100 - (chaosScore * 0.5 + speechScore * 0.28 + rumbleScore * 0.18), 0, 100));
+
+  let roomTone = "Calm and work-friendly.";
+  if (chaosScore >= 70) roomTone = "Chaotic and interruption-heavy.";
+  else if (speechScore >= 62) roomTone = "Speech-contaminated and socially busy.";
+  else if (rumbleScore >= 60) roomTone = "Low-end heavy and physically fatiguing.";
+  else if (focusFit >= 72) roomTone = "Steady enough for reading, coding, and longer focus blocks.";
+
+  const hiddenNoises = [];
+  if (humScore >= 0.34) hiddenNoises.push("Persistent low hum suggests HVAC, AC, or building systems.");
+  if (buzzScore >= 0.26) hiddenNoises.push("A bright narrow buzz suggests fluorescent lighting, chargers, or electronics.");
+  if (speechScore >= 48) hiddenNoises.push("Voice-range activity is present, even if the room does not feel obviously loud.");
+  if (keyboardScore >= 0.22) hiddenNoises.push("Short high-frequency clicks resemble keyboard chatter or utensil/clatter noise.");
+  if (slamScore >= 0.2) hiddenNoises.push("Sudden broadband bursts suggest doors, dropped objects, or abrupt interruptions.");
+  if (rumbleScore >= 54) hiddenNoises.push("Low-end rumble is elevated enough to wear on concentration over time.");
+  if (!hiddenNoises.length) hiddenNoises.push("No single hidden noise dominates. The room signature is comparatively smooth.");
+
+  const interruptions =
+    chaosScore >= 65 && speechScore < 45
+      ? "This room is not just loud. It is interruption-heavy, with unstable spikes that will keep yanking attention."
+      : speechScore >= 55
+        ? "The room’s main problem is voice-range activity. It may feel manageable, but your language system will keep noticing it."
+        : focusFit >= 72
+          ? "The room stays fairly even. You are mostly fighting baseline ambience, not random interruption bursts."
+          : "The room is workable, but it has enough instability that long focus blocks will probably feel harder than they should.";
+
+  let bestSeat = "Mark a few spots while moving around the room and Dreamscape will tell you which one is calmest.";
+  if (spots.length >= 2) {
+    const sortedSpots = [...spots].sort((left, right) => left.focusFit - right.focusFit);
+    const best = sortedSpots[sortedSpots.length - 1];
+    const worst = sortedSpots[0];
+    bestSeat = `${best.label} is currently the calmest saved position. ${worst.label} is the noisiest.`;
+  } else if (spots.length === 1) {
+    bestSeat = `${spots[0].label} is saved. Mark at least one more spot to compare seating positions.`;
+  }
+
+  return {
+    status: roomState.isScanning ? "Live room scan" : "Last room scan",
+    roomTone,
+    focusFit,
+    chaosScore,
+    speechScore,
+    rumbleScore,
+    interruptions,
+    hiddenNoises,
+    bestSeat,
+  };
+}
+
+function computeRoomFrameSummary() {
+  if (!roomState.analyser || !roomState.freqData || !roomState.timeData) return null;
+  roomState.analyser.getFloatFrequencyData(roomState.freqData);
+  roomState.analyser.getFloatTimeDomainData(roomState.timeData);
+
+  const normalizedSpectrum = Array.from(roomState.freqData, (value) => normalizeScore(value, -105, -20));
+  const compactSpectrum = Array.from({ length: 72 }, (_, index) => {
+    const start = (index / 72) * normalizedSpectrum.length;
+    const end = ((index + 1) / 72) * normalizedSpectrum.length;
+    return bucketAverage(normalizedSpectrum, start, end);
+  });
+
+  let sumSquares = 0;
+  let peak = 0;
+  let zeroCrossings = 0;
+  for (let index = 0; index < roomState.timeData.length; index += 1) {
+    const sample = roomState.timeData[index];
+    sumSquares += sample * sample;
+    peak = Math.max(peak, Math.abs(sample));
+    if (index > 0 && Math.sign(roomState.timeData[index - 1]) !== Math.sign(sample)) zeroCrossings += 1;
+  }
+  const rms = Math.sqrt(sumSquares / Math.max(1, roomState.timeData.length));
+  const zcr = zeroCrossings / Math.max(1, roomState.timeData.length - 1);
+
+  let flux = 0;
+  if (roomState.previousSpectrum) {
+    for (let index = 0; index < compactSpectrum.length; index += 1) {
+      flux += Math.abs(compactSpectrum[index] - roomState.previousSpectrum[index]);
+    }
+    flux /= compactSpectrum.length;
+  }
+  roomState.previousSpectrum = compactSpectrum;
+
+  const sampleRate = roomState.sampleRate || audioContext.sampleRate;
+  const fftSize = roomState.fftSize;
+  const speech = bandAverage(normalizedSpectrum, sampleRate, fftSize, 250, 4000);
+  const rumble = bandAverage(normalizedSpectrum, sampleRate, fftSize, 25, 140);
+  const hum = Math.max(
+    bandAverage(normalizedSpectrum, sampleRate, fftSize, 48, 62),
+    bandAverage(normalizedSpectrum, sampleRate, fftSize, 58, 72)
+  );
+  const buzz = bandAverage(normalizedSpectrum, sampleRate, fftSize, 7000, 12000);
+  const keyboard = bandAverage(normalizedSpectrum, sampleRate, fftSize, 1800, 6500) * clamp(flux * 4.2, 0, 1);
+  const slam = clamp((peak - rms) * 2.8 + flux * 2.6, 0, 1);
+  const chaos = clamp(flux * 2.2 + (peak - rms) * 1.3 + zcr * 3.6 + speech * 0.35, 0, 1);
+
+  return {
+    compactSpectrum,
+    rms,
+    zcr,
+    flux,
+    speech,
+    rumble,
+    hum,
+    buzz,
+    keyboard,
+    slam,
+    chaos,
+    focusFit: clamp(1 - (chaos * 0.52 + speech * 0.28 + rumble * 0.2), 0, 1),
+  };
+}
+
+// ─── Canvas / orb rendering ───────────────────────────────────────────────────
+
 function resizeCanvasToDisplay(canvas) {
   if (!canvas) return;
   const ratio = window.devicePixelRatio || 1;
@@ -1932,84 +1750,193 @@ function buildOrbProfile(report, steps = 72) {
   const spectrumMax = Math.max(...spectrum, 1e-6);
   const noveltyMax = Math.max(...novelty, 1e-6);
   return Array.from({ length: steps }, (_, index) => {
-    const spectrumIndex = Math.floor((index / steps) * Math.max(spectrum.length - 1, 1));
-    const noveltyIndex = Math.floor((index / steps) * Math.max(novelty.length - 1, 1));
-    const spectralLift = (spectrum[spectrumIndex] || 0) / spectrumMax;
-    const noveltyLift = (novelty[noveltyIndex] || 0) / noveltyMax;
-    return spectralLift * 0.72 + noveltyLift * 0.28;
+    const si = Math.floor((index / steps) * Math.max(spectrum.length - 1, 1));
+    const ni = Math.floor((index / steps) * Math.max(novelty.length - 1, 1));
+    return ((spectrum[si] || 0) / spectrumMax) * 0.72 + ((novelty[ni] || 0) / noveltyMax) * 0.28;
   });
 }
 
-function drawOrbMesh(canvas, report, view, accent = "#6ee7ff") {
+function buildLiveRenderReport() {
+  if (!liveState.isBuilding || !liveState.buildSpectrum || !liveState.buildMeta) return null;
+  return {
+    id: "__building__",
+    name: liveState.buildMeta.name,
+    sample_rate_hz: liveState.buildMeta.sampleRate,
+    averageSpectrum: liveState.buildSpectrum,
+    segmentation: { novelty: [] },
+    modulationBands: {
+      delta: 0,
+      theta: 0,
+      alpha: 0,
+      beta: 0,
+      gamma: 0,
+      dominant_modulation_hz: 0,
+    },
+    features: [],
+    evidence: { scores: { attack_density: 0 } },
+  };
+}
+
+function drawGeometricOrb(canvas, report, view) {
   if (!canvas || !report) return;
   resizeCanvasToDisplay(canvas);
   const ctx = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
   const ratio = window.devicePixelRatio || 1;
-  const w = width / ratio;
-  const h = height / ratio;
+  const w = canvas.width / ratio;
+  const h = canvas.height / ratio;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  const profile = buildOrbProfile(report);
+  let spectrum = report.averageSpectrum || [];
+  let hzPerBin = report.sample_rate_hz / (2 * Math.max(spectrum.length - 1, 1));
+
+  // Live playback: read real-time FFT from AnalyserNode
+  if (liveState.isPlaying && liveState.playingReportId === report.id && liveState.analyser && liveState.liveFreqData) {
+    liveState.analyser.getFloatFrequencyData(liveState.liveFreqData);
+    // Convert dBFS → linear magnitude
+    spectrum = Array.from(liveState.liveFreqData, (db) => Math.pow(10, db / 20));
+    hzPerBin = audioContext.sampleRate / liveState.analyser.fftSize;
+  } else if (liveState.isBuilding && liveState.buildSpectrum) {
+    // Construction phase: show partially accumulated spectrum
+    spectrum = liveState.buildSpectrum;
+    hzPerBin = liveState.buildHzPerBin;
+  }
+
+  const novelty = report.segmentation?.novelty || [];
+  const specMax = Math.max(...spectrum, 1e-6);
+  const noveltyMax = Math.max(...novelty, 1e-6);
   const metrics = summarizeReportMetrics(report);
-  const baseRadius = Math.min(w, h) * 0.22 * view.zoom;
-  const centerX = w * 0.5;
-  const centerY = h * 0.52;
+
+  const baseRadius = Math.min(w, h) * 0.25 * view.zoom;
+  const cx = w * 0.5;
+  const cy = h * 0.52;
+  const focal = baseRadius * 3.4;
   const time = performance.now() * 0.001;
-  const breathe = 1 + Math.sin(time * (0.7 + metrics.modulationHz * 0.03)) * 0.035;
-  const rings = 7;
+  // Breathing speed and amplitude from actual modulation Hz
+  const breatheAmp = 0.018 + metrics.rmsMean * 0.04;
+  const breathe = 1 + Math.sin(time * (0.5 + metrics.modulationHz * 0.038)) * breatheAmp;
 
-  ctx.fillStyle = "rgba(5, 11, 25, 0.86)";
-  ctx.fillRect(0, 0, w, h);
+  // ── Color entirely from real data ──────────────────────────────────────────
+  // Dominant band → base hue
+  const bandRGB = {
+    delta: [167, 139, 250],   // violet   — slow, deep
+    theta: [192, 100, 252],   // magenta  — dreamlike
+    alpha: [110, 231, 255],   // cyan     — meditative
+    beta:  [74,  222, 128],   // green    — alert
+    gamma: [255, 255, 200],   // bright   — intense
+  };
+  const dominantBand = getDominantBand(report);
+  const [br, bg, bb] = bandRGB[dominantBand] || bandRGB.alpha;
 
-  for (let ring = 0; ring < rings; ring += 1) {
-    const latNorm = ring / (rings - 1);
-    const latitude = (latNorm - 0.5) * Math.PI * 0.9;
-    const ringScale = Math.cos(latitude);
-    const vertical = Math.sin(latitude);
-    const points = [];
+  // Spectral centroid shifts color temperature (low=warm, high=cool)
+  const centroidNorm = clamp((metrics.centroidMean - 300) / 3700, 0, 1);
+  const cr = Math.round(lerp(br, 160, centroidNorm));
+  const cg = Math.round(lerp(bg, 230, centroidNorm));
+  const cb = Math.round(lerp(bb, 255, centroidNorm));
 
-    for (let index = 0; index < profile.length; index += 1) {
-      const azimuth = (index / profile.length) * Math.PI * 2;
-      const jagged = profile[index] * (0.16 + metrics.attackDensity * 0.85);
-      const radius = baseRadius * breathe * (1 + jagged);
-      const point = {
-        x: Math.cos(azimuth) * ringScale * radius,
-        y: vertical * radius,
-        z: Math.sin(azimuth) * ringScale * radius,
-      };
-      const rotated = rotatePoint(point, view.yaw, view.pitch);
-      const depth = 1.9 / (1.9 + rotated.z / Math.max(baseRadius, 1));
-      points.push({
-        x: centerX + rotated.x * depth,
-        y: centerY + rotated.y * depth,
-        depth,
+  // Overall brightness from rms energy
+  const energyBright = clamp(0.3 + metrics.rmsMean * 5.5, 0.3, 1.0);
+
+  // Attack density controls surface sharpness via power curve
+  // low attack → smooth round sphere   high attack → sharp spiky peaks
+  const spikeExponent = 1.0 + (1.0 - clamp(metrics.attackDensity, 0, 1)) * 2.0;
+
+  const uSteps = 36;
+  const vSteps = 18;
+
+  // ── Build 3D vertices ──────────────────────────────────────────────────────
+  const verts = [];
+  for (let vi = 0; vi <= vSteps; vi++) {
+    const vt = vi / vSteps;
+    const phi = vt * Math.PI; // colatitude 0→π
+    for (let ui = 0; ui <= uSteps; ui++) {
+      const ut = ui / uSteps;
+      const theta = ut * 2 * Math.PI; // longitude 0→2π
+
+      // Map longitude → frequency bin (log scale 30Hz–18kHz)
+      const logMin = Math.log(30);
+      const logMax = Math.log(Math.min(report.sample_rate_hz / 2, 18000));
+      const freqHz = Math.exp(logMin + ut * (logMax - logMin));
+      const binIdx = clamp(Math.round(freqHz / hzPerBin), 0, spectrum.length - 1);
+      const specVal = (spectrum[binIdx] || 0) / specMax; // 0→1, real spectrum data
+
+      // Map latitude → structural novelty (variation over time)
+      const novIdx = Math.floor(vt * Math.max(novelty.length - 1, 0));
+      const novVal = novelty.length ? (novelty[novIdx] || 0) / noveltyMax : 0;
+
+      // Displacement = exactly the data, shaped by attack density
+      const rawDisp = specVal * 0.44 + novVal * 0.10;
+      const disp = Math.pow(clamp(rawDisp, 0, 1), spikeExponent);
+      const r = baseRadius * breathe * (1 + disp * 0.9);
+
+      // Spherical → Cartesian
+      const sinPhi = Math.sin(phi);
+      const x3 = r * sinPhi * Math.cos(theta);
+      const y3 = r * Math.cos(phi);
+      const z3 = r * sinPhi * Math.sin(theta);
+
+      const rot = rotatePoint({ x: x3, y: y3, z: z3 }, view.yaw, view.pitch);
+      const s = focal / Math.max(focal + rot.z, 0.01);
+
+      verts.push({
+        px: cx + rot.x * s,
+        py: cy + rot.y * s,
+        z: rot.z,
+        energy: specVal, // per-vertex spectral energy
       });
     }
+  }
+
+  // ── Build quads, depth-sort (painter's algorithm) ──────────────────────────
+  const stride = uSteps + 1;
+  const faces = [];
+  for (let vi = 0; vi < vSteps; vi++) {
+    for (let ui = 0; ui < uSteps; ui++) {
+      const i0 = vi * stride + ui;
+      const i1 = i0 + 1;
+      const i2 = i0 + stride;
+      const i3 = i2 + 1;
+      const avgZ = (verts[i0].z + verts[i1].z + verts[i2].z + verts[i3].z) * 0.25;
+      const avgE = (verts[i0].energy + verts[i1].energy + verts[i2].energy + verts[i3].energy) * 0.25;
+      faces.push({ i0, i1, i2, i3, z: avgZ, energy: avgE });
+    }
+  }
+  faces.sort((a, b) => a.z - b.z);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  ctx.fillStyle = "rgba(5,8,22,0.92)";
+  ctx.fillRect(0, 0, w, h);
+
+  for (const f of faces) {
+    const a = verts[f.i0], b = verts[f.i1], c = verts[f.i2], d = verts[f.i3];
+    // depthFade: 0 = fully behind, 1 = fully in front
+    const depthFade = clamp((f.z / baseRadius + 1) * 0.5, 0, 1);
+    const fillA = (depthFade * f.energy * energyBright * 0.28).toFixed(3);
+    const edgeA = (depthFade * (0.06 + f.energy * 0.72) * energyBright).toFixed(3);
 
     ctx.beginPath();
-    points.forEach((point, index) => {
-      if (index === 0) ctx.moveTo(point.x, point.y);
-      else ctx.lineTo(point.x, point.y);
-    });
+    ctx.moveTo(a.px, a.py);
+    ctx.lineTo(b.px, b.py);
+    ctx.lineTo(d.px, d.py);
+    ctx.lineTo(c.px, c.py);
     ctx.closePath();
-    const alpha = 0.16 + latNorm * 0.18;
-    ctx.strokeStyle = `${accent}${Math.round(alpha * 255)
-      .toString(16)
-      .padStart(2, "0")}`;
-    ctx.lineWidth = 1.1 + latNorm * 0.8;
+
+    ctx.fillStyle = `rgba(${cr},${cg},${cb},${fillA})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${cr},${cg},${cb},${edgeA})`;
+    ctx.lineWidth = 0.55;
     ctx.stroke();
   }
 
-  const glow = ctx.createRadialGradient(centerX, centerY, baseRadius * 0.12, centerX, centerY, baseRadius * 1.2);
-  glow.addColorStop(0, "rgba(255,255,255,0.22)");
-  glow.addColorStop(0.3, "rgba(110,231,255,0.18)");
-  glow.addColorStop(1, "rgba(110,231,255,0)");
+  // ── Central glow — radius driven by energy ─────────────────────────────────
+  const glowR = baseRadius * (1.1 + metrics.rmsMean * 0.8);
+  const glow = ctx.createRadialGradient(cx, cy, baseRadius * 0.06, cx, cy, glowR);
+  glow.addColorStop(0, `rgba(${cr},${cg},${cb},${(0.2 * energyBright).toFixed(3)})`);
+  glow.addColorStop(0.4, `rgba(${cr},${cg},${cb},${(0.07 * energyBright).toFixed(3)})`);
+  glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(centerX, centerY, baseRadius * 1.15, 0, Math.PI * 2);
+  ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -2089,49 +2016,206 @@ function drawCollision(canvas, left, right, collision) {
   }
 }
 
+function drawRoomHeatmap(canvas) {
+  if (!canvas) return;
+  resizeCanvasToDisplay(canvas);
+  const ctx = canvas.getContext("2d");
+  const ratio = window.devicePixelRatio || 1;
+  const w = canvas.width / ratio;
+  const h = canvas.height / ratio;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "rgba(5, 11, 25, 0.96)";
+  ctx.fillRect(0, 0, w, h);
+
+  const frames = roomState.heatmapFrames;
+  if (!frames.length) {
+    ctx.fillStyle = "rgba(238, 244, 255, 0.72)";
+    ctx.font = '600 16px "Avenir Next", sans-serif';
+    ctx.fillText("Start Room Scan to render the live spectrum heat view.", 22, h / 2);
+    return;
+  }
+
+  const columns = Math.min(frames.length, 160);
+  const rows = frames[0].length;
+  const columnWidth = w / columns;
+  const rowHeight = h / rows;
+
+  for (let x = 0; x < columns; x += 1) {
+    const frame = frames[frames.length - columns + x];
+    for (let y = 0; y < rows; y += 1) {
+      const intensity = clamp(frame[y], 0, 1);
+      const hue = lerp(210, 12, intensity);
+      const lightness = lerp(8, 64, intensity);
+      ctx.fillStyle = `hsl(${hue} 90% ${lightness}%)`;
+      ctx.fillRect(x * columnWidth, h - (y + 1) * rowHeight, columnWidth + 1, rowHeight + 1);
+    }
+  }
+}
+
+function refreshRoomSummary() {
+  roomState.summary = buildRoomSummary(roomState.rollingFrames, roomState.spots);
+}
+
+function updateRoomScanFrame() {
+  if (!roomState.isScanning || !roomState.analyser) return;
+  const frame = computeRoomFrameSummary();
+  if (!frame) return;
+  roomState.heatmapFrames.push(frame.compactSpectrum);
+  roomState.heatmapFrames = roomState.heatmapFrames.slice(-180);
+  roomState.rollingFrames.push(frame);
+  roomState.rollingFrames = roomState.rollingFrames.slice(-180);
+  refreshRoomSummary();
+
+  const now = Date.now();
+  if (now - roomState.lastUiRefreshAt > 700) {
+    roomState.lastUiRefreshAt = now;
+    renderAll();
+  }
+}
+
 function bindInteractiveCanvas(canvas, viewKey) {
   if (!canvas || canvas.dataset.bound === "true") return;
   canvas.dataset.bound = "true";
   const view = state.visuals[viewKey];
+  const beginDrag = (x, y) => {
+    view.dragging = true;
+    view.lastX = x;
+    view.lastY = y;
+  };
+  const updateDrag = (x, y) => {
+    const dx = x - view.lastX;
+    const dy = y - view.lastY;
+    view.yaw += dx * 0.01;
+    view.pitch = clamp(view.pitch + dy * 0.008, -1.15, 1.15);
+    view.lastX = x;
+    view.lastY = y;
+  };
+  const stopDrag = () => {
+    view.dragging = false;
+  };
 
   canvas.addEventListener("pointerdown", (event) => {
-    view.dragging = true;
-    view.lastX = event.clientX;
-    view.lastY = event.clientY;
+    event.preventDefault();
+    beginDrag(event.clientX, event.clientY);
     canvas.setPointerCapture?.(event.pointerId);
   });
   canvas.addEventListener("pointermove", (event) => {
     if (!view.dragging) return;
-    const dx = event.clientX - view.lastX;
-    const dy = event.clientY - view.lastY;
-    view.yaw += dx * 0.01;
-    view.pitch = clamp(view.pitch + dy * 0.008, -1.15, 1.15);
-    view.lastX = event.clientX;
-    view.lastY = event.clientY;
+    event.preventDefault();
+    updateDrag(event.clientX, event.clientY);
   });
-  const stopDrag = () => {
-    view.dragging = false;
-  };
   canvas.addEventListener("pointerup", stopDrag);
   canvas.addEventListener("pointerleave", stopDrag);
+  canvas.addEventListener("pointercancel", stopDrag);
+  canvas.addEventListener("lostpointercapture", stopDrag);
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
     view.zoom = clamp(view.zoom - event.deltaY * 0.0012, 0.72, 1.8);
-  });
+  }, { passive: false });
+
+  // Touch fallback for browsers that still route canvas gestures through
+  // touch events instead of stable pointer events.
+  canvas.addEventListener("touchstart", (event) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    event.preventDefault();
+    beginDrag(touch.clientX, touch.clientY);
+  }, { passive: false });
+  canvas.addEventListener("touchmove", (event) => {
+    if (!view.dragging) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    event.preventDefault();
+    updateDrag(touch.clientX, touch.clientY);
+  }, { passive: false });
+  canvas.addEventListener("touchend", stopDrag, { passive: true });
+  canvas.addEventListener("touchcancel", stopDrag, { passive: true });
+}
+
+function drawIdleOrb(canvas) {
+  if (!canvas) return;
+  resizeCanvasToDisplay(canvas);
+  const ctx = canvas.getContext("2d");
+  const ratio = window.devicePixelRatio || 1;
+  const w = canvas.width / ratio;
+  const h = canvas.height / ratio;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const time = performance.now() * 0.001;
+  const cx = w * 0.5;
+  const cy = h * 0.52;
+  const baseR = Math.min(w, h) * 0.22;
+  const breathe = 1 + Math.sin(time * 0.6) * 0.03;
+  const steps = 72;
+
+  ctx.fillStyle = "rgba(5, 8, 22, 0.86)";
+  ctx.fillRect(0, 0, w, h);
+
+  const rings = 6;
+  for (let ring = 0; ring < rings; ring += 1) {
+    const latNorm = ring / (rings - 1);
+    const lat = (latNorm - 0.5) * Math.PI * 0.88;
+    const rs = Math.cos(lat);
+    const vert = Math.sin(lat);
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i += 1) {
+      const angle = (i / steps) * Math.PI * 2;
+      const wave = 0.04 * Math.sin(angle * 4 + time * 0.8) + 0.02 * Math.sin(angle * 7 - time * 0.5);
+      const r = baseR * breathe * (1 + wave);
+      const x = cx + Math.cos(angle) * rs * r;
+      const y = cy + vert * r + Math.sin(angle) * rs * r * 0.06;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    const alpha = 0.1 + latNorm * 0.14;
+    ctx.strokeStyle = `rgba(110,231,255,${alpha.toFixed(2)})`;
+    ctx.lineWidth = 1 + latNorm * 0.6;
+    ctx.stroke();
+  }
+
+  const glow = ctx.createRadialGradient(cx, cy, baseR * 0.1, cx, cy, baseR * 1.2);
+  glow.addColorStop(0, "rgba(167,139,250,0.18)");
+  glow.addColorStop(0.4, "rgba(110,231,255,0.12)");
+  glow.addColorStop(1, "rgba(110,231,255,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, baseR * 1.18, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function renderFeatureVisuals() {
+  updateRoomScanFrame();
   const primary = getSelectedTrack();
   const [left, right] = getComparisonPair();
+  const building = buildLiveRenderReport();
+  const heroOrb = document.querySelector("#hero-orb");
   const artifactCanvas = document.querySelector("#artifact-canvas");
   const collisionCanvas = document.querySelector("#collision-canvas");
+  const roomHeatmapCanvas = document.querySelector("#room-heatmap");
+
+  if (heroOrb) {
+    bindInteractiveCanvas(heroOrb, "artifact");
+    if (building) {
+      drawGeometricOrb(heroOrb, building, state.visuals.artifact);
+    } else if (primary) {
+      drawGeometricOrb(heroOrb, primary, state.visuals.artifact);
+    } else {
+      drawIdleOrb(heroOrb);
+    }
+  }
   if (artifactCanvas && primary) {
     bindInteractiveCanvas(artifactCanvas, "artifact");
-    drawOrbMesh(artifactCanvas, primary, state.visuals.artifact, "#6ee7ff");
+    drawGeometricOrb(artifactCanvas, primary, state.visuals.artifact);
   }
   if (collisionCanvas) {
     bindInteractiveCanvas(collisionCanvas, "collision");
     drawCollision(collisionCanvas, left, right, buildCollisionRead(left, right));
+  }
+  if (roomHeatmapCanvas) {
+    drawRoomHeatmap(roomHeatmapCanvas);
   }
 }
 
@@ -2147,136 +2231,34 @@ function startVisualLoop() {
   window.requestAnimationFrame(tick);
 }
 
-const MOOD_PROFILES = {
-  "astral-projection": {
-    label: "Astral Projection",
-    ideal: { centroid: 1700, flatness: 0.28, attackDensity: 0.06, modulationHz: 6, band: "theta" },
-    language: "Favors airy brightness, low attack urgency, and slow trance-like pulsing.",
-  },
-  "boss-battle": {
-    label: "Boss Battle",
-    ideal: { centroid: 3200, flatness: 0.34, attackDensity: 0.22, modulationHz: 10, band: "beta" },
-    language: "Favors high urgency, sharp attack bursts, and bright, forceful spectral weight.",
-  },
-  "meditation-trance": {
-    label: "Meditation / Trance",
-    ideal: { centroid: 1200, flatness: 0.18, attackDensity: 0.05, modulationHz: 5, band: "alpha" },
-    language: "Favors grounded warmth, low transient pressure, and alpha/theta-adjacent pulsing.",
-  },
-};
+// ─── State helpers ────────────────────────────────────────────────────────────
 
-function runMoodProfile(profileKey) {
-  const report = getSelectedTrack();
-  if (!report) {
-    setProfileOutput("Load and analyze a track before running a mood profile.");
-    return;
-  }
-  const profile = MOOD_PROFILES[profileKey];
-  if (!profile) return;
-
-  const centroid = mean(report.features.map((item) => item.spectral_centroid_hz));
-  const flatness = mean(report.features.map((item) => item.spectral_flatness));
-  const attackDensity = report.evidence.scores.attack_density || 0;
-  const modulationHz = report.modulationBands.dominant_modulation_hz || 0;
-  const dominantBand = getDominantBand(report);
-  const score =
-    100 -
-    Math.min(
-      100,
-      Math.abs((centroid - profile.ideal.centroid) / Math.max(profile.ideal.centroid, 1)) * 30 +
-        Math.abs(flatness - profile.ideal.flatness) * 80 +
-        Math.abs(attackDensity - profile.ideal.attackDensity) * 220 +
-        Math.abs((modulationHz - profile.ideal.modulationHz) / Math.max(profile.ideal.modulationHz, 1)) * 25 +
-        (dominantBand === profile.ideal.band ? 0 : 12)
-    );
-
-  setProfileOutput(formatMoodProfileText(report, profile, score));
-  revealPanel(profileOutput);
+function getAllReports() {
+  return [...state.reports, ...state.derivedReports];
 }
 
-function runCosmicRead(kind) {
-  const report = getSelectedTrack();
-  if (!report) {
-    setCosmicOutput("Load and analyze a track before running a cosmic read.");
-    return;
-  }
-
-  if (kind === "signature") {
-    setCosmicOutput(formatCosmicSignatureText(report));
-    revealPanel(cosmicOutput);
-    return;
-  }
-
-  if (kind === "tuning") {
-    setCosmicOutput(formatUniversalTuningText(report));
-    revealPanel(cosmicOutput);
-    return;
-  }
-
-  if (kind === "ratios") {
-    setCosmicOutput(formatHarmonicRatiosText(report));
-    revealPanel(cosmicOutput);
-  }
+function getReportById(id) {
+  return getAllReports().find((report) => report.id === id) || null;
 }
 
-function getTrackAnnotations(trackId) {
-  return state.annotations.filter((item) => item.trackId === trackId).sort((a, b) => a.time_s - b.time_s);
+function getSelectedTrack() {
+  return getReportById(state.selectedTrackId) || getAllReports()[0] || null;
 }
 
-function getComparisonReports() {
-  const all = getAllReports();
-  return {
-    left: getReportById(state.comparison.leftId) || all[0] || null,
-    right: getReportById(state.comparison.rightId) || all[1] || all[0] || null,
-  };
-}
-
-function computeFeatureMeans(report) {
-  return Object.fromEntries(
-    FEATURE_FIELDS.map((field) => [field, mean(report.features.map((item) => item[field]))])
-  );
-}
-
-function buildComparison(left, right) {
-  if (!left || !right) return null;
-  const leftMeans = computeFeatureMeans(left);
-  const rightMeans = computeFeatureMeans(right);
-  const featureDistance = Math.sqrt(
-    FEATURE_FIELDS.reduce((sum, field) => sum + (leftMeans[field] - rightMeans[field]) ** 2, 0)
-  );
-  const sharedMotifs = left.symbolic.top_motifs
-    .map((item) => item.sequence.join(" → "))
-    .filter((sequence) => right.symbolic.top_motifs.some((candidate) => candidate.sequence.join(" → ") === sequence))
-    .slice(0, 4);
-
-  return {
-    featureDistance,
-    repetitionGap: Math.abs(left.evidence.scores.repetition_index - right.evidence.scores.repetition_index),
-    dominantModulationGap: Math.abs(left.modulationBands.dominant_modulation_hz - right.modulationBands.dominant_modulation_hz),
-    sharedMotifs,
-  };
-}
-
-function syncConfigFromControls() {
-  state.config.frameSize = Number.parseInt(frameSizeInput.value, 10) || DEFAULT_CONFIG.frameSize;
-  state.config.hopSize = Number.parseInt(hopSizeInput.value, 10) || DEFAULT_CONFIG.hopSize;
-  state.config.modulationResampleHz = Number.parseInt(modulationResampleInput.value, 10) || DEFAULT_CONFIG.modulationResampleHz;
-  state.config.segmentationQuantile = (Number.parseInt(segmentationSensitivityInput.value, 10) || 90) / 100;
-  state.config.motifSpan = Number.parseInt(motifSpanInput.value, 10) || DEFAULT_CONFIG.motifSpan;
-  state.focusWindowS = Number.parseFloat(focusWindowInput.value) || 2.5;
-  state.config.biosignalLagCenterS = Number.parseFloat(biosignalLagInput.value) || 0;
-  state.selectedBiosignalSource = biosignalSourceSelect.value;
-}
-
-function updateControlReadouts() {
-  segmentationValue.textContent = `${segmentationSensitivityInput.value}th percentile`;
-  motifSpanValue.textContent = `${motifSpanInput.value} tokens`;
-  focusWindowValue.textContent = `${Number.parseFloat(focusWindowInput.value).toFixed(1)} s`;
-  biosignalLagValue.textContent = `${Number.parseFloat(biosignalLagInput.value).toFixed(2)} s`;
+function getComparisonPair() {
+  const reports = getAllReports().filter((report) => !report.isDerived);
+  if (reports.length < 2) return [reports[0] || null, null];
+  const left = getReportById(state.comparison.leftId) || reports[0];
+  const right =
+    getReportById(state.comparison.rightId) ||
+    reports.find((report) => report.id !== left.id) ||
+    reports[1];
+  return [left, right];
 }
 
 function syncSelectionDefaults() {
   const all = getAllReports();
+  const baseReports = all.filter((report) => !report.isDerived);
   if (!all.length) {
     state.selectedTrackId = null;
     state.comparison.leftId = null;
@@ -2284,1171 +2266,703 @@ function syncSelectionDefaults() {
     return;
   }
   if (!getReportById(state.selectedTrackId)) state.selectedTrackId = all[0].id;
-  if (!getReportById(state.comparison.leftId)) state.comparison.leftId = all[0].id;
-  if (!getReportById(state.comparison.rightId)) state.comparison.rightId = all[1]?.id || all[0].id;
-}
-
-function renderTrackOptions(select, selectedId) {
-  const reports = getAllReports();
-  select.innerHTML = reports.length
-    ? reports
-        .map(
-          (report) =>
-            `<option value="${escapeHtml(report.id)}">${escapeHtml(report.isDerived ? `${report.name} [derived]` : report.name)}</option>`
-        )
-        .join("")
-    : `<option value="">No tracks loaded</option>`;
-  if (reports.length) select.value = selectedId || reports[0].id;
-}
-
-function renderModeState() {
-  modeDescription.textContent = MODE_DEFINITIONS[state.mode].description;
-  modeButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.mode === state.mode);
-  });
-}
-
-function renderMetricCards(reports) {
-  if (!reports.length) {
-    summaryGrid.innerHTML = `<div class="empty">Run the analyzer to populate the live metric deck.</div>`;
+  if (!baseReports.length) {
+    state.comparison.leftId = null;
+    state.comparison.rightId = null;
     return;
   }
-  const allFeatures = reports.flatMap((report) => report.features);
-  const annotations = state.annotations.length;
-  const reelCount = state.reelClips.length;
-  summaryGrid.innerHTML = `
-    <article class="metric-card">
-      <div class="label">Tracks</div>
-      <div class="value">${reports.length}</div>
-      <p class="metric-note">Base and derived reports currently active in the workspace.</p>
-    </article>
-    <article class="metric-card">
-      <div class="label">Mean Energy</div>
-      <div class="value">${mean(allFeatures.map((item) => item.rms)).toFixed(3)}</div>
-      <p class="metric-note">Average RMS across all analyzed frames.</p>
-    </article>
-    <article class="metric-card">
-      <div class="label">Dominant Bias</div>
-      <div class="value">${escapeHtml(getDominantBand(reports[0]).toUpperCase())}</div>
-      <p class="metric-note">Most energetic modulation band on the active report.</p>
-    </article>
-    <article class="metric-card">
-      <div class="label">Annotations</div>
-      <div class="value">${annotations}</div>
-      <p class="metric-note">Bookmarks and notes saved in local browser storage.</p>
-    </article>
-    <article class="metric-card">
-      <div class="label">Focus Reel</div>
-      <div class="value">${reelCount}</div>
-      <p class="metric-note">Queued clips ready to be fused into a derived sequence.</p>
-    </article>
-  `;
+  if (!baseReports.some((report) => report.id === state.comparison.leftId)) state.comparison.leftId = baseReports[0].id;
+  if (!baseReports.some((report) => report.id === state.comparison.rightId)) {
+    state.comparison.rightId = baseReports[1]?.id || baseReports[0].id;
+  }
+  if (baseReports.length > 1 && state.comparison.leftId === state.comparison.rightId) {
+    state.comparison.rightId = baseReports.find((report) => report.id !== state.comparison.leftId)?.id || baseReports[1].id;
+  }
 }
 
-function renderHumanReadout() {
-  const report = getSelectedTrack();
-  if (!report) {
-    humanReadout.innerHTML = `<div class="empty">Analyze a track to generate the human-language dashboard.</div>`;
-    return;
+function setSelectedTrack(id) {
+  if (liveState.isPlaying && liveState.playingReportId !== id) {
+    stopPlayback();
   }
-
-  const summary = buildHumanReadout(report);
-  humanReadout.innerHTML = `
-    <article class="human-card">
-      <div class="label">Vibe</div>
-      <div class="value">${escapeHtml(summary.vibe)}</div>
-      <div class="detail">Maps spectral brightness, attack pressure, spread, and pulsing into an immediately felt mood.</div>
-    </article>
-    <article class="human-card">
-      <div class="label">Sound Quality</div>
-      <div class="value">${escapeHtml(summary.quality)}</div>
-      <div class="detail">${escapeHtml(summary.details.harmony_alignment)} • ${escapeHtml(summary.details.dissonance)}</div>
-    </article>
-    <article class="human-card">
-      <div class="label">Body Response</div>
-      <div class="value">${escapeHtml(summary.body)}</div>
-      <div class="detail">${escapeHtml(summary.details.biosignal_note)}</div>
-    </article>
-    <article class="human-card">
-      <div class="label">Sacred / Tuning</div>
-      <div class="value">${escapeHtml(summary.tuning)}</div>
-      <div class="detail">${escapeHtml(summary.spiritual)}</div>
-    </article>
-  `;
+  state.selectedTrackId = id;
+  renderAll();
 }
 
-function syncCanvasSize(canvas) {
-  const dpr = window.devicePixelRatio || 1;
-  const width = Math.max(300, Math.round(canvas.clientWidth * dpr));
-  const height = Math.max(180, Math.round(canvas.clientHeight * dpr));
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width;
-    canvas.height = height;
+function setComparisonTrack(side, id) {
+  if (side === "left") {
+    state.comparison.leftId = id;
+  } else {
+    state.comparison.rightId = id;
   }
-  return { width, height, dpr, ctx: canvas.getContext("2d") };
+  syncSelectionDefaults();
+  renderAll();
 }
 
-function drawChartSpec(canvas, spec) {
-  const { width, height, dpr, ctx } = syncCanvasSize(canvas);
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "rgba(255,255,255,0.03)";
-  ctx.fillRect(0, 0, width, height);
-
-  if (!spec || !spec.series?.length || !spec.series.some((series) => series.points.length)) {
-    ctx.fillStyle = "rgba(255,255,255,0.5)";
-    ctx.font = `${16 * dpr}px sans-serif`;
-    ctx.textAlign = "center";
-    ctx.fillText("Run analysis to populate this view.", width / 2, height / 2);
-    return;
-  }
-
-  const allPoints = spec.series.flatMap((series) => series.points);
-  const xMin = spec.xDomain?.[0] ?? Math.min(...allPoints.map((point) => point.x));
-  const xMax = spec.xDomain?.[1] ?? Math.max(...allPoints.map((point) => point.x), 1);
-  const yMin = spec.yDomain?.[0] ?? Math.min(...allPoints.map((point) => point.y));
-  const yMax = spec.yDomain?.[1] ?? Math.max(...allPoints.map((point) => point.y), 1);
-  const resolvedYMin = yMin === yMax ? yMin - 1 : yMin;
-  const resolvedYMax = yMin === yMax ? yMax + 1 : yMax;
-
-  const plot = {
-    left: 16 * dpr,
-    right: width - 16 * dpr,
-    top: 14 * dpr,
-    bottom: height - 16 * dpr,
-  };
-
-  const xToPx = (value) => plot.left + ((value - xMin) / Math.max(xMax - xMin, 1e-9)) * (plot.right - plot.left);
-  const yToPx = (value) => plot.bottom - ((value - resolvedYMin) / Math.max(resolvedYMax - resolvedYMin, 1e-9)) * (plot.bottom - plot.top);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.lineWidth = 1;
-  for (let step = 1; step < 4; step += 1) {
-    const y = plot.top + ((plot.bottom - plot.top) * step) / 4;
-    ctx.beginPath();
-    ctx.moveTo(plot.left, y);
-    ctx.lineTo(plot.right, y);
-    ctx.stroke();
-  }
-
-  if (spec.rangeHighlight) {
-    const start = xToPx(spec.rangeHighlight.start);
-    const end = xToPx(spec.rangeHighlight.end);
-    ctx.fillStyle = spec.rangeHighlight.color || "rgba(255, 211, 111, 0.12)";
-    ctx.fillRect(start, plot.top, Math.max(end - start, 2), plot.bottom - plot.top);
-  }
-
-  for (const marker of spec.markers || []) {
-    const x = xToPx(marker.x);
-    ctx.strokeStyle = marker.color || "rgba(255,255,255,0.2)";
-    ctx.beginPath();
-    ctx.moveTo(x, plot.top);
-    ctx.lineTo(x, plot.bottom);
-    ctx.stroke();
-  }
-
-  for (const series of spec.series) {
-    ctx.strokeStyle = series.color;
-    ctx.lineWidth = 2.5 * dpr;
-    ctx.beginPath();
-    series.points.forEach((point, index) => {
-      const x = xToPx(point.x);
-      const y = yToPx(point.y);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-  }
-
-  if (spec.currentX !== undefined && spec.currentX !== null) {
-    const x = xToPx(spec.currentX);
-    ctx.strokeStyle = "rgba(255, 123, 156, 0.9)";
-    ctx.lineWidth = 1.5 * dpr;
-    ctx.beginPath();
-    ctx.moveTo(x, plot.top);
-    ctx.lineTo(x, plot.bottom);
-    ctx.stroke();
-  }
-
-  if (spec.hoverX !== undefined && spec.hoverX !== null) {
-    const x = xToPx(spec.hoverX);
-    ctx.strokeStyle = "rgba(255,255,255,0.34)";
-    ctx.lineWidth = 1 * dpr;
-    ctx.beginPath();
-    ctx.moveTo(x, plot.top);
-    ctx.lineTo(x, plot.bottom);
-    ctx.stroke();
-
-    const nearestPoints = spec.series.map((series) => {
-      let nearest = series.points[0];
-      let bestDistance = Math.abs(series.points[0].x - spec.hoverX);
-      for (const point of series.points) {
-        const distance = Math.abs(point.x - spec.hoverX);
-        if (distance < bestDistance) {
-          nearest = point;
-          bestDistance = distance;
-        }
-      }
-      return { series, point: nearest };
-    });
-
-    for (const item of nearestPoints) {
-      ctx.fillStyle = item.series.color;
-      ctx.beginPath();
-      ctx.arc(xToPx(item.point.x), yToPx(item.point.y), 3.5 * dpr, 0, Math.PI * 2);
-      ctx.fill();
+async function startRoomScan() {
+  try {
+    const availability = getRoomScanAvailability();
+    if (!availability.supported) {
+      roomState.error = availability.reason;
+      refreshRoomSummary();
+      renderAll();
+      setStatus(availability.reason);
+      return;
     }
-  }
-}
+    await audioContext.resume();
+    if (roomState.isScanning) return;
 
-function bindChart(canvas, key, buildSpec, readoutEl) {
-  chartRegistry.set(key, { canvas, buildSpec, readoutEl, hoverX: null });
-  if (canvas.dataset.bound === "1") return;
-  canvas.dataset.bound = "1";
-
-  canvas.addEventListener("mousemove", (event) => {
-    const entry = chartRegistry.get(key);
-    const spec = entry.buildSpec();
-    if (!spec?.series?.length) return;
-    const rect = canvas.getBoundingClientRect();
-    const ratio = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
-    const points = spec.series.flatMap((series) => series.points);
-    const xMin = spec.xDomain?.[0] ?? Math.min(...points.map((point) => point.x));
-    const xMax = spec.xDomain?.[1] ?? Math.max(...points.map((point) => point.x), 1);
-    entry.hoverX = xMin + ratio * (xMax - xMin);
-    drawRegisteredChart(key);
-
-    const nearest = spec.series.map((series) => {
-      let point = series.points[0];
-      let distance = Math.abs(point.x - entry.hoverX);
-      for (const candidate of series.points) {
-        const nextDistance = Math.abs(candidate.x - entry.hoverX);
-        if (nextDistance < distance) {
-          point = candidate;
-          distance = nextDistance;
-        }
-      }
-      return `${series.name}: ${point.y.toFixed(3)} @ ${point.x.toFixed(2)}`;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
     });
-    readoutEl.textContent = nearest.join(" • ");
-    chartTooltip.textContent = nearest.join("\n");
-    chartTooltip.style.left = `${event.clientX + 12}px`;
-    chartTooltip.style.top = `${event.clientY + 12}px`;
-    chartTooltip.classList.remove("hidden");
+
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = roomState.fftSize;
+    analyser.smoothingTimeConstant = 0.5;
+    const sourceNode = audioContext.createMediaStreamSource(stream);
+    sourceNode.connect(analyser);
+
+    roomState.stream = stream;
+    roomState.sourceNode = sourceNode;
+    roomState.analyser = analyser;
+    roomState.freqData = new Float32Array(analyser.frequencyBinCount);
+    roomState.timeData = new Float32Array(analyser.fftSize);
+    roomState.previousSpectrum = null;
+    roomState.heatmapFrames = [];
+    roomState.rollingFrames = [];
+    roomState.error = null;
+    roomState.sampleRate = audioContext.sampleRate;
+    roomState.isScanning = true;
+    roomState.lastUiRefreshAt = 0;
+    refreshRoomSummary();
+    renderAll();
+    setStatus("Room scan live. Walk around and mark spots to compare seats.");
+  } catch (error) {
+    roomState.error = error.message || "Microphone access was blocked.";
+    refreshRoomSummary();
+    roomState.isScanning = false;
+    renderAll();
+    setStatus(`Room scan unavailable: ${roomState.error}`);
+  }
+}
+
+function stopRoomScan() {
+  roomState.sourceNode?.disconnect();
+  roomState.analyser?.disconnect();
+  roomState.stream?.getTracks().forEach((track) => track.stop());
+  roomState.isScanning = false;
+  roomState.stream = null;
+  roomState.sourceNode = null;
+  roomState.analyser = null;
+  roomState.freqData = null;
+  roomState.timeData = null;
+  roomState.previousSpectrum = null;
+  roomState.lastUiRefreshAt = 0;
+  refreshRoomSummary();
+  renderAll();
+  setStatus("Room scan stopped.");
+}
+
+function markRoomSpot() {
+  if (!roomState.summary || !roomState.isScanning) return;
+  const label = `Spot ${roomState.spots.length + 1}`;
+  roomState.spots.push({
+    label,
+    focusFit: roomState.summary.focusFit,
+    chaosScore: roomState.summary.chaosScore,
+    speechScore: roomState.summary.speechScore,
   });
-
-  canvas.addEventListener("mouseleave", () => {
-    const entry = chartRegistry.get(key);
-    entry.hoverX = null;
-    readoutEl.textContent = "";
-    chartTooltip.classList.add("hidden");
-    drawRegisteredChart(key);
-  });
-
-  canvas.addEventListener("click", (event) => {
-    const entry = chartRegistry.get(key);
-    const spec = entry.buildSpec();
-    if (!spec?.series?.length || !spec.onClick) return;
-    const rect = canvas.getBoundingClientRect();
-    const ratio = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
-    const points = spec.series.flatMap((series) => series.points);
-    const xMin = spec.xDomain?.[0] ?? Math.min(...points.map((point) => point.x));
-    const xMax = spec.xDomain?.[1] ?? Math.max(...points.map((point) => point.x), 1);
-    spec.onClick(xMin + ratio * (xMax - xMin));
-  });
+  roomState.spots = roomState.spots.slice(-6);
+  refreshRoomSummary();
+  renderAll();
+  setStatus(`${label} saved for seat comparison.`);
 }
 
-function drawRegisteredChart(key) {
-  const entry = chartRegistry.get(key);
-  if (!entry) return;
-  const spec = entry.buildSpec();
-  if (spec) spec.hoverX = entry.hoverX;
-  drawChartSpec(entry.canvas, spec);
-}
-
-function redrawAllCharts() {
-  for (const key of chartRegistry.keys()) drawRegisteredChart(key);
-}
-
-function renderPlaybackState() {
-  const report = getSelectedTrack();
-  if (!report) {
-    playbackTime.textContent = "No track loaded.";
-    focusReadout.innerHTML = `<div class="empty">Analyze a track to unlock the focus deck.</div>`;
-    redrawAllCharts();
-    return;
-  }
-
-  playbackTime.textContent = `${escapeHtml(report.name)} • ${formatSeconds(getCurrentTime())} / ${formatSeconds(report.duration_s)}`;
-  const feature = getNearestFeature(report, getCurrentTime());
-  const segment = getSegmentWindow(report, getCurrentTime());
-  const dominantBand = getDominantBand(report);
-  focusReadout.innerHTML = `
-    <article class="mini-stat">
-      <div class="label">Cursor</div>
-      <div class="value">${formatCompactSeconds(getCurrentTime())}</div>
-    </article>
-    <article class="mini-stat">
-      <div class="label">Window</div>
-      <div class="value">${formatCompactSeconds(segment.start)} → ${formatCompactSeconds(segment.end)}</div>
-    </article>
-    <article class="mini-stat">
-      <div class="label">Energy</div>
-      <div class="value">${feature ? feature.rms.toFixed(3) : "n/a"}</div>
-    </article>
-    <article class="mini-stat">
-      <div class="label">Dominant Bias</div>
-      <div class="value">${escapeHtml(dominantBand.toUpperCase())}</div>
-    </article>
-  `;
-  redrawAllCharts();
-}
-
-function buildTimelineSpec(report) {
-  const annotations = getTrackAnnotations(report.id).map((item) => ({
-    x: item.time_s,
-    color: "rgba(255, 123, 156, 0.45)",
-  }));
-  return {
-    type: "time",
-    series: [
-      {
-        name: "RMS",
-        color: "#6ee7ff",
-        points: report.features.map((item) => ({ x: item.time_s, y: item.rms })),
-      },
-    ],
-    markers: [
-      ...report.segmentation.boundaries.map((item) => ({ x: item.time_s, color: "rgba(255, 211, 111, 0.42)" })),
-      ...annotations,
-    ],
-    currentX: getCurrentTime(),
-    rangeHighlight: { ...getFocusRange(report), color: "rgba(255, 211, 111, 0.12)" },
-    onClick(timeS) {
-      seekToTime(timeS);
-    },
-  };
-}
-
-function renderModeCharts() {
-  const report = getSelectedTrack();
-  const definition = MODE_DEFINITIONS[state.mode];
-  if (!report) {
-    chartATitle.textContent = "Awaiting analysis";
-    chartACopy.textContent = "Run the analyzer to populate the first interactive view.";
-    chartBTitle.textContent = "Awaiting analysis";
-    chartBCopy.textContent = "Run the analyzer to populate the second interactive view.";
-    chartAReadout.textContent = "";
-    chartBReadout.textContent = "";
-    drawChartSpec(chartACanvas, null);
-    drawChartSpec(chartBCanvas, null);
-    return;
-  }
-
-  const [chartA, chartB] = definition.charts;
-  chartATitle.textContent = chartA.title;
-  chartACopy.textContent = chartA.copy;
-  chartBTitle.textContent = chartB.title;
-  chartBCopy.textContent = chartB.copy;
-
-  bindChart(chartACanvas, "mode-a", () => ({ ...chartA.build(report), currentX: getCurrentTime(), onClick: seekToTime }), chartAReadout);
-  bindChart(chartBCanvas, "mode-b", () => ({ ...chartB.build(report), currentX: getCurrentTime(), onClick: chartB.build(report).type === "time" ? seekToTime : null }), chartBReadout);
-  drawRegisteredChart("mode-a");
-  drawRegisteredChart("mode-b");
-}
-
-function renderComparisonPanel() {
-  const { left, right } = getComparisonReports();
-  if (!left || !right) {
-    comparisonMetrics.innerHTML = `<div class="empty">Load at least one report to use the comparison workspace.</div>`;
-    drawChartSpec(comparisonCanvas, null);
-    return;
-  }
-
-  const summary = buildComparison(left, right);
-  comparisonMetrics.innerHTML = `
-    <article class="mini-stat">
-      <div class="label">Feature Distance</div>
-      <div class="value">${summary.featureDistance.toFixed(2)}</div>
-    </article>
-    <article class="mini-stat">
-      <div class="label">Repetition Gap</div>
-      <div class="value">${summary.repetitionGap.toFixed(3)}</div>
-    </article>
-    <article class="mini-stat">
-      <div class="label">Mod Gap</div>
-      <div class="value">${summary.dominantModulationGap.toFixed(2)} Hz</div>
-    </article>
-    <article class="mini-stat">
-      <div class="label">Shared Motifs</div>
-      <div class="value">${summary.sharedMotifs.length}</div>
-    </article>
-  `;
-
-  bindChart(
-    comparisonCanvas,
-    "comparison",
-    () => ({
-      type: "time",
-      series: [
-        {
-          name: left.name,
-          color: "#6ee7ff",
-          points: left.features.map((item) => ({ x: item.time_s, y: item.rms })),
-        },
-        {
-          name: right.name,
-          color: "#ffd36f",
-          points: right.features.map((item) => ({ x: item.time_s, y: item.rms })),
-        },
-      ],
-      currentX: getCurrentTime(),
-      onClick(timeS) {
-        seekToTime(timeS);
-      },
-    }),
-    chartBReadout
-  );
-  drawRegisteredChart("comparison");
-}
-
-function renderMotifWorkbench() {
-  const report = getSelectedTrack();
-  if (!report) {
-    motifWorkbench.innerHTML = `<div class="empty">Motifs appear here after analysis.</div>`;
-    return;
-  }
-
-  motifWorkbench.innerHTML = report.symbolic.top_motifs.length
-    ? report.symbolic.top_motifs
-        .map(
-          (motif, index) => `
-            <article class="motif-card">
-              <div class="label">Motif ${index + 1}</div>
-              <div class="motif-sequence">${escapeHtml(motif.sequence.join(" → "))}</div>
-              <div class="pill-row">
-                <div class="chip"><strong>Repeats</strong> ${motif.count}</div>
-                <div class="chip"><strong>Hits shown</strong> ${motif.occurrences.length}</div>
-              </div>
-              <div class="occurrence-list">
-                ${motif.occurrences
-                  .slice(0, 6)
-                  .map(
-                    (hit) => `
-                      <button class="occurrence-button" type="button" data-action="jump-motif" data-time="${hit.time_s}">
-                        ${formatCompactSeconds(hit.time_s)}
-                      </button>
-                    `
-                  )
-                  .join("")}
-                ${
-                  motif.occurrences[0]
-                    ? `<button class="occurrence-button" type="button" data-action="clip-motif" data-time="${motif.occurrences[0].time_s}">
-                        Add First Hit
-                      </button>`
-                    : ""
-                }
-              </div>
-            </article>
-          `
-        )
-        .join("")
-    : `<div class="empty">No motifs extracted for the active report.</div>`;
-}
-
-function renderAnnotations() {
-  const report = getSelectedTrack();
-  if (!report) {
-    annotationList.innerHTML = `<div class="empty">Annotations attach to the active track.</div>`;
-    return;
-  }
-  const annotations = getTrackAnnotations(report.id);
-  annotationList.innerHTML = annotations.length
-    ? annotations
-        .map(
-          (item) => `
-            <article class="annotation-card">
-              <div class="label">${escapeHtml(item.category)}</div>
-              <div class="motif-sequence">${escapeHtml(item.note || "No note")}</div>
-              <div class="annotation-meta">${formatCompactSeconds(item.time_s)}</div>
-              <div class="annotation-actions">
-                <button class="text-button" type="button" data-action="jump-annotation" data-time="${item.time_s}">Jump</button>
-                <button class="text-button" type="button" data-action="delete-annotation" data-id="${escapeHtml(item.id)}">Delete</button>
-              </div>
-            </article>
-          `
-        )
-        .join("")
-    : `<div class="empty">No annotations on the active track yet.</div>`;
-}
-
-function getCorrelationSelection(report, source) {
-  const correlationGroup = report?.correlations.find((item) => item.label === source);
-  if (!correlationGroup?.top_correlations?.length) return null;
-  const key = state.selectedCorrelationKeys[source];
-  return (
-    correlationGroup.top_correlations.find((item) => `${item.audio_feature}|${item.biosignal_feature}` === key) ||
-    correlationGroup.top_correlations[0]
-  );
-}
-
-function renderBiosignalPanel() {
-  const report = getSelectedTrack();
-  const source = state.selectedBiosignalSource;
-  const validation = state.biosignalValidation[source] || `${source}: no file loaded.`;
-  biosignalSummary.textContent = `${validation} Lag center ${state.config.biosignalLagCenterS.toFixed(2)} s.`;
-
-  if (!report) {
-    biosignalResults.innerHTML = `<div class="empty">Load audio and optional biosignals to inspect alignment.</div>`;
-    drawChartSpec(biosignalCanvas, null);
-    return;
-  }
-
-  const selected = getCorrelationSelection(report, source);
-  const group = report.correlations.find((item) => item.label === source);
-  biosignalResults.innerHTML = group?.top_correlations?.length
-    ? group.top_correlations
-        .slice(0, 8)
-        .map((item) => {
-          const key = `${item.audio_feature}|${item.biosignal_feature}`;
-          const active = selected && key === `${selected.audio_feature}|${selected.biosignal_feature}`;
-          return `
-            <article class="biosignal-card">
-              <div class="label">${escapeHtml(item.audio_feature)} vs ${escapeHtml(item.biosignal_feature)}</div>
-              <div class="pill-row">
-                <div class="biosignal-pill"><strong>r</strong> ${item.pearson_r.toFixed(3)}</div>
-                <div class="biosignal-pill"><strong>lag</strong> ${item.lag_s.toFixed(2)} s</div>
-              </div>
-              <div class="annotation-actions">
-                <button class="text-button" type="button" data-action="select-correlation" data-source="${source}" data-key="${escapeHtml(key)}">
-                  ${active ? "Active Pair" : "Focus Pair"}
-                </button>
-              </div>
-            </article>
-          `;
-        })
-        .join("")
-    : `<div class="empty">No ${source} correlations available yet.</div>`;
-
-  bindChart(
-    biosignalCanvas,
-    "biosignal",
-    () => {
-      if (!selected) return null;
-      const rows = normalizeTimeColumn(source === "EEG" ? state.eegRows : state.emfRows);
-      const audioPoints = report.features.map((item) => ({ x: item.time_s, y: item[selected.audio_feature] }));
-      const biosignalPoints = report.features.map((item) => ({
-        x: item.time_s,
-        y: interpolate(rows, selected.biosignal_feature, item.time_s + selected.lag_s),
-      }));
-      const numeric = biosignalPoints.filter((item) => Number.isFinite(item.y));
-      return {
-        type: "time",
-        series: [
-          { name: selected.audio_feature, color: "#6ee7ff", points: audioPoints },
-          { name: selected.biosignal_feature, color: "#ff7b9c", points: numeric },
-        ],
-        currentX: getCurrentTime(),
-        onClick(timeS) {
-          seekToTime(timeS);
-        },
-      };
-    },
-    chartAReadout
-  );
-  drawRegisteredChart("biosignal");
-}
-
-function renderReelPanel() {
-  reelList.innerHTML = state.reelClips.length
-    ? state.reelClips
-        .map((clip) => {
-          const report = getReportById(clip.sourceId);
-          return `
-            <article class="reel-card">
-              <div class="label">${escapeHtml(report?.name || "Missing source")}</div>
-              <div class="motif-sequence">${formatCompactSeconds(clip.start)} → ${formatCompactSeconds(clip.end)}</div>
-              <div class="reel-actions">
-                <button class="text-button" type="button" data-action="remove-reel-clip" data-id="${escapeHtml(clip.id)}">Remove</button>
-                <button class="text-button" type="button" data-action="jump-reel-clip" data-time="${clip.start}" data-source="${escapeHtml(clip.sourceId)}">Jump</button>
-              </div>
-            </article>
-          `;
-        })
-        .join("")
-    : `<div class="empty">Queue clips from the focus deck, motifs, or missions.</div>`;
-
-  const reelReport = state.derivedReports[0];
-  if (!reelReport) {
-    reelOutput.textContent = "No derived reel analysis yet.";
-    return;
-  }
-
-  reelOutput.textContent = JSON.stringify(
-    {
-      name: reelReport.name,
-      duration_s: Number(reelReport.duration_s.toFixed(3)),
-      dominant_band: getDominantBand(reelReport),
-      repetition_index: Number(reelReport.evidence.scores.repetition_index.toFixed(3)),
-      top_motif: reelReport.symbolic.top_motifs[0]?.sequence || [],
-    },
-    null,
-    2
-  );
-}
+// ─── Dashboard rendering ─────────────────────────────────────────────────────
 
 function renderTrackCards(reports) {
-  if (!reports.length) {
-    trackResults.innerHTML = `
-      <section class="dashboard-shell">
-        <div class="empty-dashboard">
-          <article class="empty-card">
-            <p class="dashboard-kicker">Solo</p>
-            <h3>Upload one track.</h3>
-            <p class="feature-subtitle">The app renders the artifact, state score, and energy read right away.</p>
-          </article>
-          <article class="empty-card">
-            <p class="dashboard-kicker">Compare</p>
-            <h3>Upload two tracks.</h3>
-            <p class="feature-subtitle">Compare and collision unlock only when two real audio files are loaded.</p>
-          </article>
-        </div>
-      </section>
-    `;
-    return;
-  }
-
-  const primary = getSelectedTrack() || reports[0];
+  const primary = reports.length ? getSelectedTrack() || reports[0] : null;
+  const baseReports = reports.filter((report) => !report.isDerived);
+  const coach = primary ? buildStudySoundCoach(primary) : null;
+  const cleanser = buildPlaylistCleanser(reports);
+  const room = roomState.summary || buildRoomSummary([], roomState.spots);
+  const trackSummary = primary ? buildHumanReadout(primary) : null;
+  const roomAvailability = getRoomScanAvailability();
+  const roomStatus = roomState.error ? `Mic error: ${roomState.error}` : roomState.isScanning ? room.status : "Mic idle";
+  const stateScore = primary ? buildStateEngineering(primary) : null;
+  const energy = primary ? buildEnergyRead(primary) : null;
   const [left, right] = getComparisonPair();
-  const human = buildHumanReadout(primary);
-  const stateScore = buildStateEngineering(primary);
-  const energy = buildEnergyRead(primary);
   const comparison = buildCompareRead(left, right);
   const collision = buildCollisionRead(left, right);
-  const spotifyContext = parseSpotifyContext(state.spotifyContext);
 
   trackResults.innerHTML = `
     <section class="dashboard-shell">
       <div class="dashboard-toolbar">
         <div class="track-switcher">
-          ${reports
-            .map(
-              (report) => `
-                <button
-                  class="track-chip ${report.id === primary.id ? "active" : ""}"
-                  type="button"
-                  data-action="focus-track"
-                  data-track-id="${report.id}"
-                >
-                  ${escapeHtml(report.name)}
-                </button>
-              `
-            )
-            .join("")}
+          ${
+            reports.length
+              ? reports
+                  .map(
+                    (report) => `
+                      <button
+                        class="track-chip ${report.id === primary.id ? "active" : ""}"
+                        type="button"
+                        data-action="focus-track"
+                        data-track-id="${report.id}"
+                      >
+                        ${escapeHtml(report.name)}
+                      </button>
+                    `
+                  )
+                  .join("")
+              : `<button class="track-chip active" type="button" disabled>No tracks loaded</button>`
+          }
         </div>
         <div class="app-summary">
           <div class="toolbar-copy">
-            <p>${escapeHtml(primary.name)} is active. It reads ${escapeHtml(human.vibe.toLowerCase())} with ${escapeHtml(withIndefiniteArticle(energy.label.toLowerCase()))} energy profile.</p>
+            <p>${
+              primary
+                ? `${escapeHtml(primary.name)} is active. It reads ${escapeHtml(trackSummary.vibe.toLowerCase())}, carries ${escapeHtml(withIndefiniteArticle(energy.label.toLowerCase()))} energy profile, is strongest for ${escapeHtml(coach.tasks[0].label.toLowerCase())}, and estimates ${(primary.advanced?.estimated_key || "an ambiguous key field")} ${(primary.advanced?.estimated_scale || "")}`.trim() + `.`
+                : "Upload a song or playlist to generate task-specific study guidance. Room Scan works independently if you want to profile a space first."
+            }</p>
           </div>
           <div class="micro-stat-row">
             <div class="micro-stat">
-              <div class="micro-stat-label">Surface</div>
-              <div class="micro-stat-value">${escapeHtml(human.quality)}</div>
+              <div class="micro-stat-label">Active Track</div>
+              <div class="micro-stat-value">${primary ? escapeHtml(primary.name) : "Waiting"}</div>
             </div>
             <div class="micro-stat">
-              <div class="micro-stat-label">Tuning</div>
-              <div class="micro-stat-value">${escapeHtml(human.tuning)}</div>
+              <div class="micro-stat-label">Room Scan</div>
+              <div class="micro-stat-value">${escapeHtml(roomStatus)}</div>
             </div>
             <div class="micro-stat">
-              <div class="micro-stat-label">Harmony</div>
-              <div class="micro-stat-value">${escapeHtml(human.details.harmony_alignment)}</div>
+              <div class="micro-stat-label">Playlist</div>
+              <div class="micro-stat-value">${reports.length ? `${reports.length} track${reports.length === 1 ? "" : "s"}` : "No tracks"}</div>
             </div>
           </div>
-          ${
-            spotifyContext
-              ? `<p class="spotify-note">${escapeHtml(spotifyContext.note)}</p>`
-              : ""
-          }
         </div>
+        ${
+          baseReports.length > 1
+            ? `
+              <div class="compare-picker-shell">
+                <div class="compare-picker">
+                  <div class="compare-picker-label">Compare Left</div>
+                  <div class="compare-track-row">
+                    ${baseReports
+                      .map(
+                        (report) => `
+                          <button
+                            class="track-chip ${left?.id === report.id ? "active" : ""}"
+                            type="button"
+                            data-action="set-compare-left"
+                            data-track-id="${report.id}"
+                          >
+                            ${escapeHtml(report.name)}
+                          </button>
+                        `
+                      )
+                      .join("")}
+                  </div>
+                </div>
+                <div class="compare-picker">
+                  <div class="compare-picker-label">Compare Right</div>
+                  <div class="compare-track-row">
+                    ${baseReports
+                      .map(
+                        (report) => `
+                          <button
+                            class="track-chip ${right?.id === report.id ? "active" : ""}"
+                            type="button"
+                            data-action="set-compare-right"
+                            data-track-id="${report.id}"
+                          >
+                            ${escapeHtml(report.name)}
+                          </button>
+                        `
+                      )
+                      .join("")}
+                  </div>
+                </div>
+              </div>
+            `
+            : ""
+        }
       </div>
 
-      <div class="dashboard-grid">
-        <article class="feature-card">
-          <p class="dashboard-kicker">01 • Artifact</p>
-          <h3>Liquid glass orb</h3>
-          <p class="feature-subtitle">Built from the real spectrum, novelty, and transient structure. Drag to rotate. Scroll to zoom.</p>
-          <canvas id="artifact-canvas" class="orb-canvas"></canvas>
-          <p class="artifact-note">Jaggedness follows structural friction. Breathing speed follows the measured modulation rate at ${primary.modulationBands.dominant_modulation_hz.toFixed(2)} Hz.</p>
-        </article>
+      <section class="dashboard-section">
+        <p class="dashboard-kicker dashboard-section-title">Core Features</p>
+        <div class="dashboard-grid">
+          <article class="feature-card">
+            <p class="dashboard-kicker">00 • Orb</p>
+            <h3>${primary ? `${escapeHtml(primary.name)} artifact orb` : "Upload a track to activate the orb."}</h3>
+            <p class="feature-subtitle">${primary ? `The hero orb is reading the real spectrum, novelty, attack density, modulation, MFCC recurrence, and harmonic key field from ${escapeHtml(primary.name)}.` : "The liquid-glass orb becomes the live visual artifact once a track is analyzed."}</p>
+            <p class="artifact-note">${primary ? `Drag to rotate. Scroll to zoom. Breathing speed follows ${primary.modulationBands.dominant_modulation_hz.toFixed(2)} Hz modulation. Recurrence affinity is ${(primary.advanced?.recurrence_mean_affinity || 0).toFixed(3)}, and the harmonic center leans ${(primary.advanced?.estimated_key || "ambiguous")} ${(primary.advanced?.estimated_scale || "")}.` : "The orb remains interactive as the main visual surface above this dashboard."}</p>
+          </article>
 
-        <article class="feature-card">
-          <p class="dashboard-kicker">02 • State</p>
-          <h3>${escapeHtml(stateScore.verdict)}</h3>
-          <p class="feature-subtitle">${escapeHtml(stateScore.guidance)}</p>
-          <div class="score-grid">
-            ${stateScore.entries
-              .map(
-                (entry) => `
-                  <div class="score-block">
-                    <div class="score-label">${escapeHtml(entry.label)}</div>
-                    <div class="score-value">${entry.score}%</div>
-                    <div class="score-bar"><div class="score-fill" style="width:${entry.score}%"></div></div>
+          <article class="feature-card">
+            <p class="dashboard-kicker">01 • State</p>
+            <h3>${primary ? escapeHtml(stateScore.verdict) : "Upload a track to score state."}</h3>
+            <p class="feature-subtitle">${primary ? escapeHtml(stateScore.guidance) : "Dreamscape maps measured roughness, repetition, phase stability, and energy into focus, hype, and chill scores."}</p>
+            ${
+              primary
+                ? `
+                  <div class="score-grid">
+                    ${stateScore.entries
+                      .map(
+                        (entry) => `
+                          <div class="score-block">
+                            <div class="score-label">${escapeHtml(entry.label)}</div>
+                            <div class="score-value">${entry.score}%</div>
+                            <div class="score-bar"><div class="score-fill" style="width:${entry.score}%"></div></div>
+                          </div>
+                        `
+                      )
+                      .join("")}
+                  </div>
+                  <p class="score-note">Derived from RMS energy, attack density, spectral roughness, phase stability, and modulation behavior.</p>
+                `
+                : ""
+            }
+          </article>
+
+          <article class="feature-card">
+            <p class="dashboard-kicker">02 • Energy</p>
+            <h3>${primary ? escapeHtml(energy.label) : "Upload a track to read energy."}</h3>
+            <p class="feature-subtitle">${primary ? escapeHtml(energy.copy) : "Pressure, shock, and peak lift are computed from the uploaded waveform, not placeholder labels."}</p>
+            ${
+              primary
+                ? `
+                  <div class="energy-stack">
+                    <span class="tone-badge">${escapeHtml(energy.label)} profile</span>
+                    <div class="energy-grid">
+                      <div class="energy-block">
+                        <div class="compare-label">Energy</div>
+                        <div class="energy-value">${energy.energyScore}%</div>
+                        <p class="energy-note">Overall pressure from average loudness, peak lift, and transient density.</p>
+                      </div>
+                      <div class="energy-block">
+                        <div class="compare-label">Shock</div>
+                        <div class="energy-value">${energy.shockScore}%</div>
+                        <p class="energy-note">How sharply the track jumps when peaks and attacks arrive.</p>
+                      </div>
+                      <div class="energy-block">
+                        <div class="compare-label">Peak</div>
+                        <div class="energy-value">${energy.peakEnergy.toFixed(3)}</div>
+                        <p class="energy-note">95th percentile RMS window from the analyzed waveform.</p>
+                      </div>
+                    </div>
                   </div>
                 `
-              )
-              .join("")}
-          </div>
-          <p class="score-note">These scores are derived from RMS energy, attack density, spectral roughness, phase stability, and modulation behavior.</p>
-        </article>
+                : ""
+            }
+          </article>
 
-        <article class="feature-card">
-          <p class="dashboard-kicker">03 • Energy</p>
-          <h3>${escapeHtml(energy.label)}</h3>
-          <div class="energy-stack">
-            <span class="tone-badge">${escapeHtml(energy.label)} profile</span>
-            <p class="feature-subtitle">${escapeHtml(energy.copy)}</p>
-            <div class="energy-grid">
-              <div class="energy-block">
-                <div class="compare-label">Energy</div>
-                <div class="energy-value">${energy.energyScore}%</div>
-                <p class="energy-note">Overall pressure from average loudness, peak lift, and transient density.</p>
+          <article class="feature-card">
+            <p class="dashboard-kicker">03 • Compare</p>
+            <h3>${escapeHtml(comparison.title)}</h3>
+            <p class="feature-subtitle">${escapeHtml(comparison.summary)}</p>
+            <div class="compare-grid-simple">
+              ${
+                comparison.stats.length
+                  ? comparison.stats
+                      .map(
+                        (stat) => `
+                          <div class="compare-block">
+                            <div class="compare-label">${escapeHtml(stat.label)}</div>
+                            <div class="compare-value">${escapeHtml(stat.value)}</div>
+                            <p class="compare-note">${escapeHtml(stat.note)}</p>
+                          </div>
+                        `
+                      )
+                      .join("")
+                  : `
+                      <div class="compare-block">
+                        <div class="compare-label">Waiting</div>
+                        <div class="compare-value">2 tracks</div>
+                        <p class="compare-note">Upload a second track to unlock side-by-side comparison.</p>
+                      </div>
+                    `
+              }
+            </div>
+          </article>
+
+          <article class="feature-card">
+            <p class="dashboard-kicker">04 • Collision</p>
+            <h3>${escapeHtml(collision.label)}${collision.score !== null ? ` • ${collision.score}%` : ""}</h3>
+            <p class="feature-subtitle">${escapeHtml(collision.summary)}</p>
+            <canvas id="collision-canvas" class="collision-canvas"></canvas>
+            <p class="collision-note">Experimental. Driven by measured differences in centroid, modulation pace, phase stability, repetition lock, and dominant peak placement.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="dashboard-section">
+        <p class="dashboard-kicker dashboard-section-title">Side Features</p>
+        <div class="dashboard-grid">
+          <article class="feature-card">
+            <p class="dashboard-kicker">05 • Study Sound Coach</p>
+            <h3>${primary ? escapeHtml(coach.headline) : "Upload a track to score task fit."}</h3>
+            <p class="feature-subtitle">${primary ? escapeHtml(coach.summary) : "Dreamscape maps measured loudness, attack pressure, repetition, texture, and modulation into reading, writing, coding, memorization, and recovery guidance."}</p>
+            ${
+              primary
+                ? `
+                  <p class="feature-lead">${escapeHtml(primary.name)} is most useful for <strong>${escapeHtml(coach.tasks[0].label.toLowerCase())}</strong> and least useful for <strong>${escapeHtml(coach.tasks[coach.tasks.length - 1].label.toLowerCase())}</strong>.</p>
+                  <div class="coach-task-grid">
+                    ${coach.tasks
+                      .map(
+                        (task) => `
+                          <div class="coach-task">
+                            <div class="coach-task-head">
+                              <div class="coach-task-label">${escapeHtml(task.label)}</div>
+                              <div class="coach-task-score">${task.score}%</div>
+                            </div>
+                            <div class="score-bar"><div class="score-fill" style="width:${task.score}%"></div></div>
+                            <p class="coach-task-note">${escapeHtml(task.note)}</p>
+                          </div>
+                        `
+                      )
+                      .join("")}
+                  </div>
+                  <div class="cleanser-banner">
+                    <strong>Why it reads this way</strong>
+                    <p>Measured flags: ${coach.cautionFlags.map((flag) => escapeHtml(flag)).join(" · ")}. These come from the uploaded audio, not canned mood labels.</p>
+                  </div>
+                `
+                : ""
+            }
+          </article>
+
+          <article class="feature-card">
+            <p class="dashboard-kicker">06 • Room Scan</p>
+            <h3>${escapeHtml(roomState.error ? "Room Scan unavailable here." : room.roomTone)}</h3>
+            <p class="feature-subtitle">${escapeHtml(roomState.error || room.interruptions)}</p>
+            <div class="room-actions">
+              <button class="btn-secondary" type="button" data-action="start-room-scan" ${roomState.isScanning || !roomAvailability.supported ? "disabled" : ""}>Start Room Scan</button>
+              <button class="btn-secondary" type="button" data-action="stop-room-scan" ${roomState.isScanning ? "" : "disabled"}>Stop Scan</button>
+              <button class="btn-secondary" type="button" data-action="mark-room-spot" ${roomState.isScanning ? "" : "disabled"}>Mark Current Spot</button>
+            </div>
+            ${
+              roomState.error || !roomAvailability.supported
+                ? `
+                  <div class="cleanser-banner">
+                    <strong>Mic Access Required</strong>
+                    <p>${escapeHtml(roomState.error || roomAvailability.reason)}</p>
+                  </div>
+                `
+                : ""
+            }
+            <canvas id="room-heatmap" class="heatmap-canvas"></canvas>
+            <div class="room-grid">
+              <div class="room-metric">
+                <div class="room-metric-label">Focus Fit</div>
+                <div class="room-metric-value">${room.focusFit}%</div>
+                <div class="room-metric-copy">How usable this room is for sustained study right now.</div>
               </div>
-              <div class="energy-block">
-                <div class="compare-label">Shock</div>
-                <div class="energy-value">${energy.shockScore}%</div>
-                <p class="energy-note">How sharply the track jumps when peaks and attacks arrive.</p>
+              <div class="room-metric">
+                <div class="room-metric-label">Chaos</div>
+                <div class="room-metric-value">${room.chaosScore}%</div>
+                <div class="room-metric-copy">Irregular spikes, chatter-like motion, and unstable bursts.</div>
               </div>
-              <div class="energy-block">
-                <div class="compare-label">Peak</div>
-                <div class="energy-value">${energy.peakEnergy.toFixed(3)}</div>
-                <p class="energy-note">95th percentile RMS window from the analyzed waveform.</p>
+              <div class="room-metric">
+                <div class="room-metric-label">Speech</div>
+                <div class="room-metric-value">${room.speechScore}%</div>
+                <div class="room-metric-copy">Voice-range activity that can hijack your language system.</div>
+              </div>
+              <div class="room-metric">
+                <div class="room-metric-label">Rumble</div>
+                <div class="room-metric-value">${room.rumbleScore}%</div>
+                <div class="room-metric-copy">Low-end hum and room vibration that wears on focus over time.</div>
               </div>
             </div>
-          </div>
-        </article>
+            <ul class="noise-list">
+              ${room.hiddenNoises.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+            </ul>
+            <div class="seat-callout">
+              <strong>Best Seat Finder</strong>
+              <p>${escapeHtml(room.bestSeat)}</p>
+            </div>
+          </article>
 
-        <article class="feature-card">
-          <p class="dashboard-kicker">04 • Compare</p>
-          <h3>${escapeHtml(comparison.title)}</h3>
-          <p class="feature-subtitle">${comparison.summary}</p>
-          <div class="compare-grid-simple">
-            ${
-              comparison.stats.length
-                ? comparison.stats
-                    .map(
-                      (stat) => `
-                        <div class="compare-block">
-                          <div class="compare-label">${escapeHtml(stat.label)}</div>
-                          <div class="compare-value">${escapeHtml(stat.value)}</div>
-                          <p class="compare-note">${escapeHtml(stat.note)}</p>
+          <article class="feature-card">
+            <p class="dashboard-kicker">07 • Playlist Cleanser</p>
+            <h3>${escapeHtml(cleanser.headline)}</h3>
+            <p class="feature-subtitle">${escapeHtml(cleanser.summary)}</p>
+            <div class="cleanser-grid">
+              ${
+                cleanser.tracks.length
+                  ? cleanser.tracks
+                      .map(
+                        (item) => `
+                          <div class="cleanser-item">
+                            <div class="cleanser-head">
+                              <div class="cleanser-track">${escapeHtml(item.name)}</div>
+                              <div class="cleanser-score">${item.support}%</div>
+                            </div>
+                            <p class="cleanser-note">${escapeHtml(item.note)}</p>
+                            <div class="cleanser-tags">
+                              ${item.tags.map((tag) => `<span class="cleanser-tag ${escapeHtml(tag.tone)}">${escapeHtml(tag.label)}</span>`).join("")}
+                            </div>
+                          </div>
+                        `
+                      )
+                      .join("")
+                  : `
+                      <div class="cleanser-item">
+                        <div class="cleanser-head">
+                          <div class="cleanser-track">Waiting for playlist</div>
+                          <div class="cleanser-score">--</div>
                         </div>
-                      `
-                    )
-                    .join("")
-                : `
-                    <div class="compare-block">
-                      <div class="compare-label">Waiting</div>
-                      <div class="compare-value">2 tracks</div>
-                      <p class="compare-note">Upload a second song to populate this card.</p>
-                    </div>
-                  `
+                        <p class="cleanser-note">Load a playlist and Dreamscape will flag the tracks that are too explosive, jagged, or distractingly unstable for study.</p>
+                      </div>
+                    `
+              }
+            </div>
+            ${
+              cleanser.safest && cleanser.riskiest
+                ? `
+                  <div class="cleanser-banner">
+                    <strong>Quick Verdict</strong>
+                    <p>Keep <strong>${escapeHtml(cleanser.safest.name)}</strong> in the study loop. Consider cutting or saving <strong>${escapeHtml(cleanser.riskiest.name)}</strong> for workouts, walking, or recovery instead of deep work.</p>
+                  </div>
+                `
+                : ""
             }
-          </div>
-        </article>
-
-        <article class="feature-card">
-          <p class="dashboard-kicker">05 • Collision</p>
-          <h3>${escapeHtml(collision.label)}${collision.score !== null ? ` • ${collision.score}% compatibility` : ""}</h3>
-          <p class="feature-subtitle">${escapeHtml(collision.summary)}</p>
-          <canvas id="collision-canvas" class="collision-canvas"></canvas>
-          <p class="collision-note">Experimental. The score is driven by measured differences in centroid, modulation pace, phase stability, repetition lock, and dominant peak placement.</p>
-        </article>
-      </div>
+          </article>
+        </div>
+      </section>
     </section>
   `;
 
   renderFeatureVisuals();
 }
 
-function syncAudioPlayer({ preserveTime = true } = {}) {
-  const report = getSelectedTrack();
-  if (!report) {
-    audioPlayer.removeAttribute("src");
-    audioPlayer.load();
-    return;
-  }
-  const shouldPreserve = preserveTime && audioPlayer.dataset.trackId === report.id;
-  const current = shouldPreserve ? audioPlayer.currentTime || 0 : 0;
-  if (audioPlayer.dataset.trackId !== report.id) {
-    audioPlayer.src = report.audio_url;
-    audioPlayer.dataset.trackId = report.id;
-    audioPlayer.load();
-    state.pendingSeek = current;
-  } else if (shouldPreserve) {
-    audioPlayer.currentTime = clamp(current, 0, report.duration_s);
-  }
-}
-
 function renderAll() {
   syncSelectionDefaults();
-  renderModeState();
-  renderTrackOptions(selectedTrackSelect, state.selectedTrackId);
-  renderTrackOptions(compareLeftSelect, state.comparison.leftId);
-  renderTrackOptions(compareRightSelect, state.comparison.rightId);
   exportButton.disabled = !getAllReports().length;
-  renderMetricCards(getAllReports());
-  renderHumanReadout();
-  renderModeCharts();
-  renderComparisonPanel();
-  renderMotifWorkbench();
-  renderAnnotations();
-  renderBiosignalPanel();
-  renderReelPanel();
   renderTrackCards(getAllReports());
-  bindChart(timelineCanvas, "timeline", () => {
-    const report = getSelectedTrack();
-    return report ? buildTimelineSpec(report) : null;
-  }, chartAReadout);
-  syncAudioPlayer();
-  renderPlaybackState();
-}
-
-function setSelectedTrack(id, options = {}) {
-  state.selectedTrackId = id;
-  selectedTrackSelect.value = id;
-  syncAudioPlayer({ preserveTime: false });
-  if (options.timeS !== undefined) {
-    state.pendingSeek = options.timeS;
+  const primary = getSelectedTrack();
+  if (orbLabel) {
+    orbLabel.textContent = liveState.isBuilding && liveState.buildMeta
+      ? `Constructing ${liveState.buildMeta.name} · ${Math.round(liveState.buildProgress * 100)}%`
+      : primary
+        ? `${primary.name} · ${primary.modulationBands.dominant_modulation_hz.toFixed(2)} Hz modulation`
+        : "Upload a track to activate";
   }
-  renderAll();
+  updatePlayBtn();
 }
 
-function seekToTime(timeS) {
-  const report = getSelectedTrack();
-  if (!report) return;
-  const next = clamp(timeS, 0, report.duration_s);
-  if (audioPlayer.readyState >= 1) {
-    audioPlayer.currentTime = next;
-  } else {
-    state.pendingSeek = next;
-  }
-  renderPlaybackState();
+// ─── Live playback ────────────────────────────────────────────────────────────
+
+function updatePlayBtn() {
+  if (!orbPlayBtn) return;
+  const primary = getSelectedTrack();
+  orbPlayBtn.hidden = !primary;
+  orbPlayBtn.disabled = !primary || liveState.isBuilding;
+  orbPlayBtn.textContent = liveState.isPlaying ? "⏸ Pause" : "▶ Play";
 }
 
-function jumpBoundary(direction) {
-  const report = getSelectedTrack();
-  if (!report) return;
-  const now = getCurrentTime();
-  const boundaries = report.segmentation.boundaries.map((item) => item.time_s).sort((a, b) => a - b);
-  const target =
-    direction === "next"
-      ? boundaries.find((timeS) => timeS > now + 0.05)
-      : [...boundaries].reverse().find((timeS) => timeS < now - 0.05);
-  if (target !== undefined) seekToTime(target);
+function stopPlayback() {
+  try { liveState.sourceNode?.stop(); } catch (_) {}
+  liveState.sourceNode?.disconnect();
+  liveState.analyser?.disconnect();
+  liveState.isPlaying = false;
+  liveState.playingReportId = null;
+  liveState.sourceNode = null;
+  liveState.analyser = null;
+  liveState.liveFreqData = null;
+  updatePlayBtn();
 }
 
-function addAnnotation(category, note, timeS = getCurrentTime()) {
-  const report = getSelectedTrack();
-  if (!report) return;
-  state.annotations.push({
-    id: `${report.id}-${Date.now()}`,
-    trackId: report.id,
-    category,
-    note,
-    time_s: clamp(timeS, 0, report.duration_s),
-  });
-  persistAnnotations();
-  renderAnnotations();
-  renderPlaybackState();
+async function startPlayback(report) {
+  stopPlayback();
+  const buffer = liveState.audioBuffers.get(report.id);
+  if (!buffer) return;
+  await audioContext.resume();
+
+  const analyser = audioContext.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.8;
+
+  const source = audioContext.createBufferSource();
+  source.buffer = buffer;
+  source.connect(analyser);
+  analyser.connect(audioContext.destination);
+  source.start(0);
+
+  liveState.analyser = analyser;
+  liveState.liveFreqData = new Float32Array(analyser.frequencyBinCount);
+  liveState.sourceNode = source;
+  liveState.isPlaying = true;
+  liveState.playingReportId = report.id;
+  source.onended = stopPlayback;
+  updatePlayBtn();
 }
 
-function addFocusClip(start, end, sourceId = state.selectedTrackId) {
-  state.reelClips.push({
-    id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    sourceId,
-    start,
-    end,
-  });
-  renderReelPanel();
+function togglePlayback() {
+  const primary = getSelectedTrack();
+  if (!primary) return;
+  if (liveState.isPlaying && liveState.playingReportId === primary.id) stopPlayback();
+  else startPlayback(primary);
 }
 
-function addCurrentFocusClip() {
-  const report = getSelectedTrack();
-  if (!report) return;
-  const range = getFocusRange(report);
-  addFocusClip(range.start, range.end, report.id);
-  setMissionOutput(`Queued ${formatCompactSeconds(range.start)} → ${formatCompactSeconds(range.end)} from ${report.name}.`);
-}
+// ─── Audio file pipeline ──────────────────────────────────────────────────────
 
-async function analyzeReel() {
-  if (!state.reelClips.length) {
-    setMissionOutput("Queue at least one clip before analyzing the reel.");
-    return;
-  }
-  const baseReports = getAllReports().filter((report) => !report.isDerived);
-  if (!baseReports.length) return;
-  const targetRate = baseReports[0].sample_rate_hz;
-  const gap = new Float32Array(Math.round(targetRate * 0.05));
-  const chunks = [];
+const audioContext = new AudioContext();
 
-  for (const clip of state.reelClips) {
-    const report = getReportById(clip.sourceId);
-    if (!report?.monoSignal) continue;
-    const source = report.sample_rate_hz === targetRate ? report.monoSignal : resampleSignal(report.monoSignal, report.sample_rate_hz, targetRate);
-    const start = clamp(Math.floor(clip.start * targetRate), 0, source.length);
-    const end = clamp(Math.ceil(clip.end * targetRate), start + 1, source.length);
-    chunks.push(source.subarray(start, end));
-    chunks.push(gap);
-  }
-
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const combined = new Float32Array(totalLength);
+function encodeWavBlob(signal, sampleRate) {
+  const dataLength = signal.length * 2;
+  const buffer = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(buffer);
   let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.length;
+  const writeString = (value) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+    offset += value.length;
+  };
+  writeString("RIFF");
+  view.setUint32(offset, 36 + dataLength, true); offset += 4;
+  writeString("WAVE");
+  writeString("fmt ");
+  view.setUint32(offset, 16, true); offset += 4;
+  view.setUint16(offset, 1, true); offset += 2;
+  view.setUint16(offset, 1, true); offset += 2;
+  view.setUint32(offset, sampleRate, true); offset += 4;
+  view.setUint32(offset, sampleRate * 2, true); offset += 4;
+  view.setUint16(offset, 2, true); offset += 2;
+  view.setUint16(offset, 16, true); offset += 2;
+  writeString("data");
+  view.setUint32(offset, dataLength, true); offset += 4;
+  for (let index = 0; index < signal.length; index += 1) {
+    const sample = clamp(signal[index], -1, 1);
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
   }
+  return new Blob([buffer], { type: "audio/wav" });
+}
 
-  cleanupReportUrls(state.derivedReports);
-  const audioUrl = URL.createObjectURL(encodeWavBlob(combined, targetRate));
-  state.derivedReports = [
-    buildReportFromSignal({
-      name: `Focus Reel (${state.reelClips.length} clips)`,
-      mono: combined,
-      sampleRate: targetRate,
-      channels: 1,
-      audioUrl,
-      isDerived: true,
-      sourceRefs: state.reelClips,
-    }),
-  ];
-  syncSelectionDefaults();
+async function buildReportFromSignal({ name, mono, sampleRate, channels, audioUrl }, onProgress) {
+  const frameReport = await analyzeFrames(mono, sampleRate, state.config, onProgress);
+  const modulation = modulationAnalysis(mono, sampleRate, state.config);
+  const embeddings = computeEmbeddings(frameReport.features);
+  const segmentation = detectSegments(embeddings, frameReport.features, state.config);
+  const symbolic = buildStructuralCodebook(frameReport.features, embeddings, modulation.bands, state.config);
+  const evidence = buildEvidenceModel(frameReport.features, modulation.bands, symbolic, segmentation);
+  const advanced = computeAdvancedBrowserAnalysis(mono, sampleRate, state.config);
+
+  return {
+    id: `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`,
+    name,
+    duration_s: mono.length / sampleRate,
+    sample_rate_hz: sampleRate,
+    channels,
+    features: frameReport.features,
+    modulationBands: modulation.bands,
+    modulationFreqs: modulation.modulationFreqs,
+    modulationSpectrum: modulation.modulationSpectrum,
+    topPeaks: topPeaks(frameReport.spectrumFreqs, frameReport.averageSpectrum),
+    symbolic,
+    evidence,
+    advanced,
+    segmentation,
+    correlations: [],
+    averageSpectrum: Array.from(frameReport.averageSpectrum),
+    spectrumFreqs: frameReport.spectrumFreqs,
+    audio_url: audioUrl,
+  };
+}
+
+async function decodeFile(file) {
+  const arrayBuffer = file.arrayBuffer ? await file.arrayBuffer() : await file;
+  return audioContext.decodeAudioData(arrayBuffer.slice(0));
+}
+
+async function analyzeFile(file) {
+  const buffer = await decodeFile(file);
+  const mono = downmix(buffer);
+  const audioUrl = URL.createObjectURL(file);
+
+  liveState.isBuilding = true;
+  liveState.buildProgress = 0;
+  liveState.buildSpectrum = null;
+  liveState.buildHzPerBin = buffer.sampleRate / state.config.frameSize;
+  liveState.buildMeta = {
+    name: file.name,
+    sampleRate: buffer.sampleRate,
+  };
   renderAll();
-  setMissionOutput("Derived reel analyzed and added to the workspace.");
-}
 
-function removeReelClip(id) {
-  state.reelClips = state.reelClips.filter((item) => item.id !== id);
-  renderReelPanel();
-}
-
-function clearReel() {
-  state.reelClips = [];
-  cleanupReportUrls(state.derivedReports);
-  state.derivedReports = [];
-  renderAll();
-}
-
-async function fetchQrngSample() {
+  let report = null;
   try {
-    setQrngStatus("Fetching QRNG sample...");
-    const params = new URLSearchParams({
-      provider: qrngProvider.value,
-      fallback: qrngFallback.value,
-      count: String(Math.max(1, Number.parseInt(qrngCount.value || "16", 10))),
-      bits: qrngBits.value,
-    });
-    const response = await fetch(`/api/qrng?${params.toString()}`);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || payload.detail || "QRNG request failed.");
-    state.qrngSample = payload;
-    state.qrngCursor = 0;
-    qrngOutput.textContent = JSON.stringify(payload, null, 2);
-    setQrngStatus(`QRNG ready from ${payload.source.toUpperCase()} (${payload.count} values).`);
-    return payload;
+    report = await buildReportFromSignal(
+      { name: file.name, mono, sampleRate: buffer.sampleRate, channels: buffer.numberOfChannels, audioUrl },
+      (partialSpectrum, progress) => {
+        liveState.buildSpectrum = partialSpectrum;
+        liveState.buildProgress = progress;
+        if (orbLabel) {
+          orbLabel.textContent = `Constructing ${file.name} · ${Math.round(progress * 100)}%`;
+        }
+      }
+    );
+    liveState.audioBuffers.set(report.id, buffer);
+    return report;
   } catch (error) {
-    qrngOutput.textContent = JSON.stringify({ error: error.message }, null, 2);
-    setQrngStatus(`QRNG failed: ${error.message}`);
+    URL.revokeObjectURL(audioUrl);
     throw error;
+  } finally {
+    liveState.isBuilding = false;
+    liveState.buildSpectrum = null;
+    liveState.buildProgress = 0;
+    liveState.buildMeta = null;
+    renderAll();
   }
 }
 
-async function ensureQrngSample() {
-  if (state.qrngSample?.data?.length) return state.qrngSample;
-  return fetchQrngSample();
+async function loadSelectedFiles() {
+  if (audioInput.files && audioInput.files.length) return [...audioInput.files];
+  return [];
 }
 
-function consumeQrngValue(modulo) {
-  const sample = state.qrngSample;
-  if (!sample?.data?.length) return Math.floor(Math.random() * modulo);
-  const value = sample.data[state.qrngCursor % sample.data.length];
-  state.qrngCursor += 1;
-  return Math.abs(value) % modulo;
-}
-
-async function runQrngAction(kind) {
-  const reports = getAllReports();
-  if (!reports.length) return;
-  await ensureQrngSample();
-  if (kind === "segment") {
-    const report = reports[consumeQrngValue(reports.length)];
-    setSelectedTrack(report.id);
-    const ratio = consumeQrngValue(1000) / 1000;
-    seekToTime(ratio * report.duration_s);
-    setMissionOutput(`QRNG sampled ${report.name} at ${formatCompactSeconds(getCurrentTime())}.`);
-  }
-  if (kind === "motif") {
-    const report = reports[consumeQrngValue(reports.length)];
-    const motifs = report.symbolic.top_motifs.filter((item) => item.occurrences.length);
-    if (!motifs.length) return;
-    const motif = motifs[consumeQrngValue(motifs.length)];
-    const hit = motif.occurrences[consumeQrngValue(motif.occurrences.length)];
-    setSelectedTrack(report.id);
-    seekToTime(hit.time_s);
-    setMissionOutput(`QRNG motif sample: ${motif.sequence.join(" → ")} at ${formatCompactSeconds(hit.time_s)}.`);
+function cleanupReportUrls(reports) {
+  for (const report of reports) {
+    if (report?.audio_url?.startsWith("blob:")) URL.revokeObjectURL(report.audio_url);
   }
 }
 
-function shuffleArray(values) {
-  const output = [...values];
-  for (let index = output.length - 1; index > 0; index -= 1) {
-    const swap = Math.floor(Math.random() * (index + 1));
-    [output[index], output[swap]] = [output[swap], output[index]];
-  }
-  return output;
+function setStatus(message) {
+  statusLine.textContent = message;
+  if (headerStatus) headerStatus.textContent = message;
 }
 
-function runSkepticCheck(kind) {
-  const report = getSelectedTrack();
-  if (!report) return;
-  if (kind === "evidence") {
-    setSkepticOutput(
-      JSON.stringify(
-        {
-          descriptors: report.evidence.descriptors,
-          scores: report.evidence.scores,
-          dominant_band: getDominantBand(report),
-          top_peaks: report.topPeaks.slice(0, 5),
-        },
-        null,
-        2
-      )
-    );
-    return;
-  }
-
-  if (kind === "noise-floor") {
-    const flatness = report.features.map((item) => item.spectral_flatness);
-    const rms = report.features.map((item) => item.rms);
-    setSkepticOutput(
-      JSON.stringify(
-        {
-          flatness_p10: Number(percentile(flatness, 0.1).toFixed(4)),
-          flatness_p50: Number(percentile(flatness, 0.5).toFixed(4)),
-          flatness_p90: Number(percentile(flatness, 0.9).toFixed(4)),
-          rms_p10: Number(percentile(rms, 0.1).toFixed(4)),
-          rms_p50: Number(percentile(rms, 0.5).toFixed(4)),
-          rms_p90: Number(percentile(rms, 0.9).toFixed(4)),
-        },
-        null,
-        2
-      )
-    );
-    return;
-  }
-
-  if (kind === "shuffle") {
-    const source = state.selectedBiosignalSource;
-    const rows = normalizeTimeColumn(source === "EEG" ? state.eegRows : state.emfRows);
-    const selection = getCorrelationSelection(report, source);
-    if (!rows.length || !selection) {
-      setSkepticOutput("No biosignal correlation is available for shuffle testing.");
-      return;
-    }
-    const numeric = rows
-      .map((row) => Number.parseFloat(row[selection.biosignal_feature]))
-      .filter((value) => Number.isFinite(value));
-    if (numeric.length < 8) {
-      setSkepticOutput("Not enough numeric biosignal data to run a shuffle baseline.");
-      return;
-    }
-    const shuffled = shuffleArray(numeric);
-    const sampled = report.features.map((feature, index) => [feature[selection.audio_feature], shuffled[index % shuffled.length]]);
-    const actual = selection.pearson_r;
-    const shuffledR = pearson(
-      sampled.map((item) => item[0]),
-      sampled.map((item) => item[1])
-    );
-    setSkepticOutput(
-      JSON.stringify(
-        {
-          source,
-          pair: `${selection.audio_feature} vs ${selection.biosignal_feature}`,
-          actual_r: Number(actual.toFixed(4)),
-          shuffled_r: Number(shuffledR.toFixed(4)),
-          survived_shuffle: Math.abs(actual) > Math.abs(shuffledR),
-        },
-        null,
-        2
-      )
-    );
-  }
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function runMission(kind) {
-  const reports = getAllReports();
-  if (!reports.length) return;
-
-  if (kind === "repetition") {
-    const report = reports
-      .slice()
-      .sort((left, right) => right.evidence.scores.repetition_index - left.evidence.scores.repetition_index)[0];
-    const motif = report.symbolic.top_motifs[0];
-    setSelectedTrack(report.id);
-    if (motif?.occurrences?.[0]) seekToTime(motif.occurrences[0].time_s);
-    setMissionOutput(`Most repetitive report: ${report.name}. Focused the top motif.`);
+function renderFileList(files) {
+  if (!fileList) return;
+  if (!files || !files.length) {
+    fileList.innerHTML = "";
     return;
   }
-
-  if (kind === "modulation") {
-    const report = reports
-      .slice()
-      .sort((left, right) => right.modulationBands.dominant_modulation_hz - left.modulationBands.dominant_modulation_hz)[0];
-    setSelectedTrack(report.id);
-    setMissionOutput(`Strongest dominant modulation found in ${report.name} at ${report.modulationBands.dominant_modulation_hz.toFixed(2)} Hz.`);
-    return;
-  }
-
-  if (kind === "skeptic") {
-    runSkepticCheck("shuffle");
-    setMissionOutput("Ran a shuffled-baseline challenge on the active biosignal pairing.");
-    return;
-  }
-
-  if (kind === "spectral-signature") {
-    runCosmicRead("signature");
-    setMissionOutput("Spectral signature generated below in plain English.");
-    return;
-  }
-
-  if (kind === "universal-tuning") {
-    runCosmicRead("tuning");
-    setMissionOutput("Universal tuning read generated below in plain English.");
-    return;
-  }
-
-  if (kind === "astral-projection" || kind === "boss-battle" || kind === "meditation-trance") {
-    runMoodProfile(kind);
-    setMissionOutput(`${MOOD_PROFILES[kind].label} profile generated below in plain English.`);
-    return;
-  }
-
-  if (kind === "random-segment") {
-    await runQrngAction("segment");
-    return;
-  }
-
-  if (kind === "build-reel") {
-    addCurrentFocusClip();
-  }
+  fileList.innerHTML = [...files]
+    .map(
+      (file) => `
+        <div class="file-chip">
+          <div class="file-chip-dot"></div>
+          <div class="file-chip-name">${escapeHtml(file.name)}</div>
+          <div class="file-chip-size">${formatBytes(file.size)}</div>
+        </div>
+      `
+    )
+    .join("");
 }
 
-function recomputeCorrelationsOnly() {
-  for (const report of getAllReports()) {
-    report.correlations = buildCorrelations(report.features);
-  }
-  renderBiosignalPanel();
-  renderTrackCards(getAllReports());
-}
+// ─── Export ───────────────────────────────────────────────────────────────────
 
 function serializeReport(report) {
   return {
@@ -3461,26 +2975,24 @@ function serializeReport(report) {
     topPeaks: report.topPeaks,
     symbolic: report.symbolic,
     evidence: report.evidence,
+    advanced: report.advanced,
     segmentation: report.segmentation,
-    correlations: report.correlations,
-    isDerived: report.isDerived,
-    source_refs: report.source_refs,
+    study_sound_coach: buildStudySoundCoach(report),
   };
 }
 
 function exportResults() {
   const payload = {
     created_at: new Date().toISOString(),
-    mode: state.mode,
     config: state.config,
-    focus_window_s: state.focusWindowS,
     reports: getAllReports().map(serializeReport),
-    annotations: state.annotations,
-    reel_clips: state.reelClips,
-    qrng_sample: state.qrngSample,
+    playlist_cleanser: buildPlaylistCleanser(getAllReports()),
+    room_scan: {
+      summary: roomState.summary,
+      spots: roomState.spots,
+    },
     guardrails: [
       "This export contains acoustic heuristics and correlations, not proof of hidden language or neural transmission.",
-      "Use biosignal matches as leads for controlled testing, not conclusions.",
     ],
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -3492,24 +3004,14 @@ function exportResults() {
   URL.revokeObjectURL(url);
 }
 
+// ─── Analysis entrypoint ──────────────────────────────────────────────────────
+
 async function runAnalysis() {
   try {
-    syncConfigFromControls();
-    updateControlReadouts();
-    state.spotifyContext = spotifyUrlInput?.value.trim() || "";
     setStatus("Preparing files...");
     await audioContext.resume();
-    state.eegRows = await parseOptionalCsv(eegInput);
-    state.emfRows = await parseOptionalCsv(emfInput);
-    state.biosignalValidation = {
-      EEG: validateBiosignalRows(state.eegRows, "EEG"),
-      EMF: validateBiosignalRows(state.emfRows, "EMF"),
-    };
-
-    if ((!audioInput.files || !audioInput.files.length) && state.spotifyContext) {
-      setStatus("Spotify links can be captured for context, but direct analysis still requires an uploaded audio file.");
-      return;
-    }
+    stopPlayback();
+    liveState.audioBuffers.clear();
 
     const files = await loadSelectedFiles();
     if (!files.length) {
@@ -3518,7 +3020,6 @@ async function runAnalysis() {
     }
 
     setStatus(`Decoding ${files.length} track(s)...`);
-
     const reports = [];
     for (const file of files) {
       setStatus(`Analyzing ${file.name}...`);
@@ -3528,7 +3029,6 @@ async function runAnalysis() {
     cleanupReportUrls(state.reports);
     cleanupReportUrls(state.derivedReports);
     state.derivedReports = [];
-    state.reelClips = [];
     state.reports = reports;
     syncSelectionDefaults();
     renderAll();
@@ -3539,198 +3039,54 @@ async function runAnalysis() {
   }
 }
 
+// ─── Event wiring ─────────────────────────────────────────────────────────────
+
 analyzeButton.addEventListener("click", runAnalysis);
 exportButton.addEventListener("click", exportResults);
-qrngButton.addEventListener("click", fetchQrngSample);
+if (orbPlayBtn) orbPlayBtn.addEventListener("click", togglePlayback);
 
-selectedTrackSelect.addEventListener("change", (event) => {
-  setSelectedTrack(event.target.value, { preserveTime: false });
+audioInput.addEventListener("change", () => {
+  renderFileList(audioInput.files);
 });
 
-compareLeftSelect.addEventListener("change", (event) => {
-  state.comparison.leftId = event.target.value;
-  renderComparisonPanel();
-});
-
-compareRightSelect.addEventListener("change", (event) => {
-  state.comparison.rightId = event.target.value;
-  renderComparisonPanel();
-});
-
-focusWindowInput.addEventListener("input", () => {
-  syncConfigFromControls();
-  updateControlReadouts();
-  renderPlaybackState();
-});
-
-segmentationSensitivityInput.addEventListener("input", updateControlReadouts);
-motifSpanInput.addEventListener("input", updateControlReadouts);
-
-biosignalLagInput.addEventListener("input", () => {
-  syncConfigFromControls();
-  updateControlReadouts();
-  recomputeCorrelationsOnly();
-});
-
-biosignalSourceSelect.addEventListener("change", () => {
-  syncConfigFromControls();
-  renderBiosignalPanel();
-});
-
-audioPlayer.addEventListener("timeupdate", renderPlaybackState);
-audioPlayer.addEventListener("play", renderPlaybackState);
-audioPlayer.addEventListener("pause", renderPlaybackState);
-audioPlayer.addEventListener("loadedmetadata", () => {
-  const report = getSelectedTrack();
-  if (!report) return;
-  if (state.pendingSeek !== null) {
-    audioPlayer.currentTime = clamp(state.pendingSeek, 0, report.duration_s);
-    state.pendingSeek = null;
-  }
-  renderPlaybackState();
-});
-
-document.querySelector("#prev-segment").addEventListener("click", () => jumpBoundary("prev"));
-document.querySelector("#next-segment").addEventListener("click", () => jumpBoundary("next"));
-document.querySelector("#bookmark-focus").addEventListener("click", () => {
-  addAnnotation(annotationCategory.value, annotationNote.value.trim() || "Quick bookmark");
-  annotationNote.value = "";
-});
-document.querySelector("#add-focus-clip").addEventListener("click", addCurrentFocusClip);
-document.querySelector("#save-annotation").addEventListener("click", () => {
-  addAnnotation(annotationCategory.value, annotationNote.value.trim() || "Annotation");
-  annotationNote.value = "";
-});
-
-analyzeReelButton.addEventListener("click", analyzeReel);
-clearReelButton.addEventListener("click", clearReel);
-
-modeButtons.forEach((button) =>
-  button.addEventListener("click", () => {
-    state.mode = button.dataset.mode;
-    renderAll();
-  })
-);
-
-missionButtons.forEach((button) =>
-  button.addEventListener("click", () => {
-    runMission(button.dataset.mission).catch((error) => setMissionOutput(error.message));
-  })
-);
-
-skepticButtons.forEach((button) =>
-  button.addEventListener("click", () => {
-    runSkepticCheck(button.dataset.skeptic);
-  })
-);
-
-cosmicButtons.forEach((button) =>
-  button.addEventListener("click", () => {
-    runCosmicRead(button.dataset.cosmic);
-  })
-);
-
-profileButtons.forEach((button) =>
-  button.addEventListener("click", () => {
-    runMoodProfile(button.dataset.profile);
-  })
-);
-
-qrngActionButtons.forEach((button) =>
-  button.addEventListener("click", () => {
-    runQrngAction(button.dataset.qrngAction).catch((error) => setMissionOutput(error.message));
-  })
-);
-
-motifWorkbench.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-action]");
-  if (!button) return;
-  if (button.dataset.action === "jump-motif") {
-    seekToTime(Number.parseFloat(button.dataset.time));
-  }
-  if (button.dataset.action === "clip-motif") {
-    const timeS = Number.parseFloat(button.dataset.time);
-    addFocusClip(Math.max(0, timeS - state.focusWindowS / 2), timeS + state.focusWindowS / 2);
-  }
-});
-
-annotationList.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-action]");
-  if (!button) return;
-  if (button.dataset.action === "jump-annotation") {
-    seekToTime(Number.parseFloat(button.dataset.time));
-  }
-  if (button.dataset.action === "delete-annotation") {
-    state.annotations = state.annotations.filter((item) => item.id !== button.dataset.id);
-    persistAnnotations();
-    renderAnnotations();
-  }
-});
-
-biosignalResults.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-action='select-correlation']");
-  if (!button) return;
-  state.selectedCorrelationKeys[button.dataset.source] = button.dataset.key;
-  renderBiosignalPanel();
-});
-
-reelList.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-action]");
-  if (!button) return;
-  if (button.dataset.action === "remove-reel-clip") {
-    removeReelClip(button.dataset.id);
-  }
-  if (button.dataset.action === "jump-reel-clip") {
-    setSelectedTrack(button.dataset.source);
-    seekToTime(Number.parseFloat(button.dataset.time));
-  }
-});
+if (dropZone) {
+  const body = document.body;
+  body.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  body.addEventListener("dragleave", (e) => { if (!e.relatedTarget) dropZone.classList.remove("drag-over"); });
+  body.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    const files = e.dataTransfer?.files;
+    if (!files?.length) return;
+    const dt = new DataTransfer();
+    [...files].filter((f) => /\.(mp3|wav|m4a|ogg|aac)$/i.test(f.name)).forEach((f) => dt.items.add(f));
+    if (dt.files.length) {
+      audioInput.files = dt.files;
+      renderFileList(dt.files);
+    }
+  });
+}
 
 trackResults.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
   if (button.dataset.action === "focus-track") {
     setSelectedTrack(button.dataset.trackId);
-  }
-  if (button.dataset.action === "jump-track-time") {
-    setSelectedTrack(button.dataset.trackId);
-    seekToTime(Number.parseFloat(button.dataset.time));
+  } else if (button.dataset.action === "set-compare-left") {
+    setComparisonTrack("left", button.dataset.trackId);
+  } else if (button.dataset.action === "set-compare-right") {
+    setComparisonTrack("right", button.dataset.trackId);
+  } else if (button.dataset.action === "start-room-scan") {
+    startRoomScan();
+  } else if (button.dataset.action === "stop-room-scan") {
+    stopRoomScan();
+  } else if (button.dataset.action === "mark-room-spot") {
+    markRoomSpot();
   }
 });
 
-window.addEventListener("resize", redrawAllCharts);
+// ─── Init ─────────────────────────────────────────────────────────────────────
 
-updateControlReadouts();
-setSkepticOutput("No skeptical check run yet.");
-setCosmicOutput("No cosmic read has been generated yet.");
-setProfileOutput("No mood profile run yet.");
-humanReadout.innerHTML = `<div class="empty">Analyze a track to generate the human-language dashboard.</div>`;
-trackResults.innerHTML = `
-  <section class="dashboard-shell">
-    <div class="empty-dashboard">
-      <article class="empty-card">
-        <p class="dashboard-kicker">Blank State</p>
-        <h3>Upload one track for the solo dashboard.</h3>
-        <p class="feature-subtitle">The app will render the artifact orb, state engineering score, and energy read from the analyzed waveform.</p>
-      </article>
-      <article class="empty-card">
-        <p class="dashboard-kicker">Compare Mode</p>
-        <h3>Upload two tracks to unlock compare and collision.</h3>
-        <p class="feature-subtitle">The fourth and fifth cards activate only when there are two real audio files to compare.</p>
-      </article>
-    </div>
-  </section>
-`;
-motifWorkbench.innerHTML = `<div class="empty">Motifs appear here after analysis.</div>`;
-annotationList.innerHTML = `<div class="empty">Annotations attach to the active track.</div>`;
-biosignalResults.innerHTML = `<div class="empty">Load audio and optional biosignals to inspect alignment.</div>`;
-reelList.innerHTML = `<div class="empty">Queue clips from the focus deck, motifs, or missions.</div>`;
-reelOutput.textContent = "No derived reel analysis yet.";
-biosignalSummary.textContent = "EEG: no file loaded. Lag center 0.00 s.";
-renderMetricCards([]);
-drawChartSpec(chartACanvas, null);
-drawChartSpec(chartBCanvas, null);
-drawChartSpec(comparisonCanvas, null);
-drawChartSpec(biosignalCanvas, null);
-drawChartSpec(timelineCanvas, null);
+refreshRoomSummary();
+renderTrackCards([]);
 startVisualLoop();
