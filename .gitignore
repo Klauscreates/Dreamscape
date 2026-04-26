@@ -17,3 +17,5 @@ analysis_output/
 analysis_output_fixcheck/
 analysis_output_v2/
 analysis_output_v3/
+.vercel
+.env*.local

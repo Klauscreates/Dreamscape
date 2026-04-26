@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dreamscape</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%236ee7ff'/%3E%3Cstop offset='1' stop-color='%23a78bfa'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='18' fill='%23050816'/%3E%3Ccircle cx='32' cy='32' r='18' stroke='url(%23g)' stroke-width='3' fill='none'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Ambient background blobs -->
+    <div class="ambient" aria-hidden="true">
+      <div class="blob blob-1"></div>
+      <div class="blob blob-2"></div>
+      <div class="blob blob-3"></div>
+    </div>
+
+    <div class="app">
+      <!-- Header -->
+      <header class="app-header">
+        <div class="logo">DREAMSCAPE</div>
+        <div class="header-status" id="header-status">Ready</div>
+      </header>
+
+      <!-- Hero: Brain sphere -->
+      <section class="orb-hero">
+        <canvas id="hero-orb" class="hero-orb-canvas"></canvas>
+        <p class="orb-label" id="orb-label">Upload a track to activate</p>
+        <div class="orb-actions">
+          <button id="orb-play-btn" class="btn-secondary orb-play-btn" hidden>▶ Play</button>
+        </div>
+      </section>
+
+      <!-- Upload -->
+      <div class="upload-card-wrap">
+        <div class="upload-card-inner">
+          <input id="audio-files" type="file" accept=".mp3,.wav,.m4a,.ogg,.aac" multiple class="file-input" />
+          <label for="audio-files" class="drop-zone" id="drop-zone">
+            <span class="drop-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </span>
+            <span class="drop-text">Drop tracks or tap to browse</span>
+            <span class="drop-hint">MP3 · WAV · M4A · OGG · AAC</span>
+          </label>
+          <div class="file-list" id="file-list"></div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="action-row">
+        <button id="analyze-button" class="btn-primary">Generate</button>
+        <button id="export-button" class="btn-secondary" disabled>Export</button>
+      </div>
+
+      <div class="status-bar" id="status-line">Waiting for input.</div>
+
+      <!-- Feature pills -->
+      <div class="feature-pills">
+        <div class="feat-pill"><strong>01</strong><span>Orb</span></div>
+        <div class="feat-pill"><strong>02</strong><span>State</span></div>
+        <div class="feat-pill"><strong>03</strong><span>Energy</span></div>
+        <div class="feat-pill"><strong>04</strong><span>Compare</span></div>
+        <div class="feat-pill"><strong>05</strong><span>Collision</span></div>
+        <div class="feat-pill"><strong>06</strong><span>Study Coach</span></div>
+        <div class="feat-pill"><strong>07</strong><span>Room Scan</span></div>
+        <div class="feat-pill"><strong>08</strong><span>Cleanser</span></div>
+      </div>
+
+      <!-- Dashboard -->
+      <section class="dashboard" id="track-results"></section>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
