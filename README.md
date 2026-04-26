@@ -1,6 +1,6 @@
 # Quantum Sound Lab
 
-This workspace now contains a local sound-analysis lab built around the two MP3s in this folder.
+This workspace contains a local sound-analysis lab with a browser app and an optional heavier Python batch-analysis path.
 
 ## What is included in the repo
 
@@ -10,9 +10,9 @@ This repository intentionally keeps only the files needed to run and judge the p
 - the local server: `lab_server.py`
 - the smoke check: `smoke_check.py`
 - the batch-analysis prototype: `sound_analyzer.py`
-- the two bundled demo MP3s used for testing and judging
+- the Python environment/bootstrap files: `requirements.txt`, `requirements-essentia.txt`, `bootstrap_python_env.sh`
 
-Local analysis exports, caches, screenshots, and temporary artifacts are ignored on purpose so the repo stays focused on the runnable app.
+Local analysis exports, caches, screenshots, temporary artifacts, and local MP3 assets are ignored on purpose so the repo stays focused on the runnable app and reproducible environment.
 
 ## Primary entry point
 
@@ -24,18 +24,52 @@ python3 lab_server.py
 
 Then open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
-For the Python analysis stack, use the workspace venv:
+For the Python batch-analysis stack, create the workspace venv:
 
 ```bash
-source /Users/nikolaistoloff/Downloads/dreamscape/.venv/bin/activate
+./bootstrap_python_env.sh
 ```
 
-The app will try to auto-load these tracks:
+Then activate it when needed:
 
-- `analog_mannequin - and all its contents.mp3`
-- `øneheart - watching the stars (sped up).mp3`
+```bash
+source .venv/bin/activate
+```
 
-If auto-load is blocked by the browser, use the file picker and choose them manually.
+What this fixes:
+
+- creates `.venv` inside the repo
+- installs the required Python packages for `sound_analyzer.py`
+- keeps `Essentia` optional instead of pretending it is guaranteed
+
+Core Python requirements live in:
+
+- `requirements.txt`
+
+Optional Essentia add-on:
+
+```bash
+python -m pip install -r requirements-essentia.txt
+```
+
+Without Essentia, `sound_analyzer.py` still runs, but key-estimation and HPCP-style extras are reduced.
+
+The browser app accepts local audio uploads such as `.mp3`, `.wav`, `.m4a`, `.ogg`, and `.aac`.
+If you keep local demo MP3s in this folder, you can use them through the file picker, but they are not tracked in git.
+
+## Python heavy-analysis smoke check
+
+Once the venv is ready, run:
+
+```bash
+python sound_analyzer.py "path/to/your-track.mp3" --out-dir analysis_output_smoke
+```
+
+If you happen to have the local demo file used during development, this also works:
+
+```bash
+python sound_analyzer.py "analog_mannequin - and all its contents.mp3" --out-dir analysis_output_smoke
+```
 
 ## QRNG API
 
@@ -78,7 +112,7 @@ The browser UI also includes a QRNG Console for manual fetches.
 The Python batch analyzer now uses:
 
 - `librosa` for STFT, onset strength, tempo, MFCC, chroma CQT, CQT, and recurrence
-- `Essentia` for beat tracking, rhythm confidence, key estimation, and HPCP pitch-class summaries
+- `Essentia` optionally for beat tracking, rhythm confidence, key estimation, and HPCP pitch-class summaries
 - `mne` for native EEG loading from `.edf`, `.bdf`, `.fif`, `.set`, and `.vhdr`
 
 ## EEG / EMF CSV format
@@ -120,4 +154,7 @@ For EEG you can also pass native files to the batch analyzer:
 - [app.js](/Users/nikolaistoloff/Downloads/dreamscape/app.js): decoding, feature extraction, motif analysis, biosignal correlation
 - [styles.css](/Users/nikolaistoloff/Downloads/dreamscape/styles.css): interface styling
 - [lab_server.py](/Users/nikolaistoloff/Downloads/dreamscape/lab_server.py): local server plus QRNG API
-- [sound_analyzer.py](/Users/nikolaistoloff/Downloads/dreamscape/sound_analyzer.py): batch-analysis prototype for WAV-oriented workflows
+- [sound_analyzer.py](/Users/nikolaistoloff/Downloads/dreamscape/sound_analyzer.py): heavier batch-analysis path for local audio files
+- [requirements.txt](/Users/nikolaistoloff/Downloads/dreamscape/requirements.txt): core Python dependencies for the batch-analysis path
+- [requirements-essentia.txt](/Users/nikolaistoloff/Downloads/dreamscape/requirements-essentia.txt): optional Essentia dependency layer
+- [bootstrap_python_env.sh](/Users/nikolaistoloff/Downloads/dreamscape/bootstrap_python_env.sh): one-command repo-local venv bootstrap

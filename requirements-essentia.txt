@@ -1,0 +1,4 @@
+# Optional add-on for richer batch-analysis output.
+# The core batch pipeline runs without Essentia, but these features degrade:
+# beat confidence, key estimation, and HPCP summaries.
+essentia

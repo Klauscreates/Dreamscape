@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
+import sys
 import textwrap
 import zlib
 from collections import Counter
@@ -19,14 +21,44 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
-import matplotlib
+ROOT = Path(__file__).resolve().parent
+os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".mplconfig"))
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import librosa
-import mne
-import numpy as np
-import pandas as pd
+MISSING_IMPORTS: List[str] = []
+
+try:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+except ImportError:
+    matplotlib = None
+    plt = None
+    MISSING_IMPORTS.append("matplotlib")
+
+try:
+    import librosa
+except ImportError:
+    librosa = None
+    MISSING_IMPORTS.append("librosa")
+
+try:
+    import mne
+except ImportError:
+    mne = None
+    MISSING_IMPORTS.append("mne")
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
+    MISSING_IMPORTS.append("numpy")
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+    MISSING_IMPORTS.append("pandas")
 
 try:
     import essentia.standard as es
@@ -55,6 +87,32 @@ class AudioData:
     sample_rate: int
     signal: np.ndarray
     channels: int
+
+
+def ensure_runtime_dependencies() -> None:
+    if not MISSING_IMPORTS:
+        return
+
+    missing = ", ".join(sorted(MISSING_IMPORTS))
+    guidance = textwrap.dedent(
+        f"""
+        Missing Python dependencies for sound_analyzer.py: {missing}
+
+        From the repo root, run:
+
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+        Optional:
+          python -m pip install -r requirements-essentia.txt
+
+        The browser app can still analyze songs without this Python stack.
+        This setup is only for the heavier batch-analysis path.
+        """
+    ).strip()
+    raise SystemExit(guidance)
 
 
 def slugify(path: Path) -> str:
@@ -657,6 +715,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    ensure_runtime_dependencies()
     args = parse_args()
     output_root = Path(args.out_dir).resolve()
     output_root.mkdir(parents=True, exist_ok=True)

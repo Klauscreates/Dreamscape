@@ -1,0 +1,288 @@
+{
+  "source_file": "/Users/nikolaistoloff/Downloads/dreamscape/analog_mannequin - and all its contents.mp3",
+  "decoded_channels": 2,
+  "sample_rate_hz": 48000,
+  "duration_s": 20.0504,
+  "global_feature_means": {
+    "rms": 0.16094431281089783,
+    "zcr": 0.01497335231050532,
+    "spectral_centroid_hz": 585.9759802381604,
+    "spectral_spread_hz": 750.714299013158,
+    "spectral_rolloff_hz": 962.608045212766,
+    "spectral_flatness": 1.0163429209342212e-07,
+    "spectral_flux": 93.43761444091797,
+    "dominant_freq_hz": 270.0548537234043,
+    "phase_lock": 0.5711120963096619,
+    "phase_gradient_var": 8.490216255187988,
+    "attack_strength": 0.17545878887176514
+  },
+  "librosa_features": {
+    "tempo_bpm": 127.841,
+    "mean_mfcc": [
+      -296.2858581542969,
+      237.49595642089844,
+      43.15211868286133,
+      0.8150740265846252,
+      14.00246810913086,
+      3.528294086456299,
+      0.0541750006377697,
+      0.7913219928741455,
+      -0.8473089933395386,
+      -0.7649779915809631,
+      -3.196877956390381,
+      -3.791316032409668,
+      -3.454780101776123
+    ],
+    "mean_chroma": [
+      0.10949300229549408,
+      0.5060930252075195,
+      0.8217039704322815,
+      0.3095029890537262,
+      0.38780298829078674,
+      0.1779160052537918,
+      0.7263919711112976,
+      0.3378939926624298,
+      0.5454019904136658,
+      0.7911199927330017,
+      0.27351200580596924,
+      0.1651969999074936
+    ],
+    "recurrence_mean_affinity": 0.032399,
+    "recurrence_frame_count": 470,
+    "recurrence_stride": 2
+  },
+  "essentia_features": {
+    "available": true,
+    "tempo_bpm": 143.60289001464844,
+    "beat_count": 51,
+    "rhythm_confidence": 0.8741292953491211,
+    "estimated_key": "F",
+    "estimated_scale": "minor",
+    "key_strength": 0.9246588945388794,
+    "mean_hpcp": [
+      0.015585999935865402,
+      0.09179200232028961,
+      0.18062099814414978,
+      0.08068100363016129,
+      0.014878000132739544,
+      0.011055000126361847,
+      0.0181099995970726,
+      0.22380200028419495,
+      0.606328010559082,
+      0.31549200415611267,
+      0.14444400370121002,
+      0.18229199945926666,
+      0.06688299775123596,
+      0.058139998465776443,
+      0.08791200071573257,
+      0.04761999845504761,
+      0.3149699866771698,
+      0.4827289879322052,
+      0.1385059952735901,
+      0.015572000294923782,
+      0.013983000069856644,
+      0.032538000494241714,
+      0.30552399158477783,
+      0.7152649760246277,
+      0.3526090085506439,
+      0.057346001267433167,
+      0.029023999348282814,
+      0.020284999161958694,
+      0.1271190047264099,
+      0.319148987531662,
+      0.20869900286197662,
+      0.1517380028963089,
+      0.2395929992198944,
+      0.09356100112199783,
+      0.03047199919819832,
+      0.04201100021600723
+    ],
+    "top_pitch_class_bins": [
+      23,
+      8,
+      17,
+      24,
+      29
+    ],
+    "sample_rate_hz": 48000
+  },
+  "modulation_bands": {
+    "delta": 0.09661587115023576,
+    "theta": 0.07909959266999954,
+    "alpha": 0.03639202487483439,
+    "beta": 0.06746927521881604,
+    "gamma": 0.09745834193930633,
+    "dominant_modulation_hz": 2.4937655860349124,
+    "modulation_sample_rate_hz": 200.0
+  },
+  "spectrum_summary": {
+    "top_peaks": [
+      {
+        "freq_hz": 375.0,
+        "strength": 91.404083
+      },
+      {
+        "freq_hz": 210.94,
+        "strength": 90.66362
+      },
+      {
+        "freq_hz": 281.25,
+        "strength": 63.338245
+      },
+      {
+        "freq_hz": 328.12,
+        "strength": 55.067841
+      },
+      {
+        "freq_hz": 70.31,
+        "strength": 45.418335
+      },
+      {
+        "freq_hz": 105.47,
+        "strength": 39.274006
+      },
+      {
+        "freq_hz": 117.19,
+        "strength": 37.711933
+      },
+      {
+        "freq_hz": 269.53,
+        "strength": 48.239876
+      },
+      {
+        "freq_hz": 152.34,
+        "strength": 27.769316
+      },
+      {
+        "freq_hz": 339.84,
+        "strength": 44.730854
+      }
+    ]
+  },
+  "symbolic_structure": {
+    "unique_token_count": 71,
+    "compression_ratio": 0.0707493849325088,
+    "top_motifs": [
+      {
+        "sequence": [
+          "E0-B1-M0-P2-GAM",
+          "E0-B1-M0-P2-GAM",
+          "E0-B1-M0-P2-GAM"
+        ],
+        "count": 29
+      },
+      {
+        "sequence": [
+          "E0-B1-M0-P2-GAM",
+          "E0-B1-M0-P2-GAM",
+          "E0-B1-M0-P1-GAM"
+        ],
+        "count": 15
+      },
+      {
+        "sequence": [
+          "E0-B1-M0-P0-GAM",
+          "E0-B1-M0-P0-GAM",
+          "E0-B1-M0-P0-GAM"
+        ],
+        "count": 12
+      },
+      {
+        "sequence": [
+          "E0-B1-M0-P1-GAM",
+          "E0-B1-M0-P2-GAM",
+          "E0-B1-M0-P2-GAM"
+        ],
+        "count": 10
+      },
+      {
+        "sequence": [
+          "E0-B1-M0-P1-GAM",
+          "E0-B1-M0-P1-GAM",
+          "E0-B1-M0-P2-GAM"
+        ],
+        "count": 9
+      },
+      {
+        "sequence": [
+          "E0-B1-M0-P1-GAM",
+          "E0-B1-M0-P1-GAM",
+          "E0-B1-M0-P1-GAM"
+        ],
+        "count": 9
+      },
+      {
+        "sequence": [
+          "E2-B2-M2-P2-GAM",
+          "E2-B2-M2-P2-GAM",
+          "E2-B2-M2-P2-GAM"
+        ],
+        "count": 9
+      },
+      {
+        "sequence": [
+          "E0-B0-M0-P2-GAM",
+          "E0-B0-M0-P2-GAM",
+          "E0-B0-M0-P2-GAM"
+        ],
+        "count": 8
+      },
+      {
+        "sequence": [
+          "E0-B1-M0-P2-GAM",
+          "E0-B1-M0-P1-GAM",
+          "E0-B1-M0-P1-GAM"
+        ],
+        "count": 7
+      },
+      {
+        "sequence": [
+          "E0-B0-M0-P2-GAM",
+          "E0-B1-M0-P2-GAM",
+          "E0-B1-M0-P2-GAM"
+        ],
+        "count": 7
+      },
+      {
+        "sequence": [
+          "E0-B2-M1-P0-GAM",
+          "E0-B2-M1-P0-GAM",
+          "E0-B2-M1-P0-GAM"
+        ],
+        "count": 7
+      },
+      {
+        "sequence": [
+          "E0-B0-M0-P2-GAM",
+          "E0-B0-M0-P2-GAM",
+          "E0-B1-M0-P2-GAM"
+        ],
+        "count": 6
+      }
+    ]
+  },
+  "structural_evidence": {
+    "descriptors": [
+      "high structural repetition",
+      "dense transient clusters",
+      "slow envelope pulsing",
+      "stable tonal field"
+    ],
+    "scores": {
+      "repetition_index": 0.929,
+      "attack_density": 0.15,
+      "timbral_drift_hz": 43.972,
+      "low_rate_modulation": 0.176,
+      "dominant_modulation_hz": 2.494,
+      "tonal_stability": 1.0,
+      "mean_rms": 0.161
+    },
+    "note": "These outputs summarize measured recurrence, transient density, modulation, and timbral drift. They are not semantic decoding."
+  },
+  "biosignal_correlations": [],
+  "scientific_guardrails": [
+    "This tool detects acoustic structure and statistical correlations, not hidden language or consciousness transfer.",
+    "The modulation bands are audio-envelope frequencies that overlap EEG band names; they are not direct brain measurements.",
+    "Any EEG/EMF correlation in this report is exploratory and should be validated with controlled experiments."
+  ]
+}
