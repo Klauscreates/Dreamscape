@@ -1,4 +1,4 @@
-# Judge-facing repo: keep source + bundled demo audio, ignore local runtime junk.
+# Keep source; ignore local audio and runtime artifacts.
 .DS_Store
 .venv/
 .mplconfig/
@@ -8,6 +8,15 @@
 __pycache__/
 *.pyc
 *.mp3
+*.wav
+*.m4a
+*.ogg
+*.aac
+.env
+.env.*
+!.env.example
+snapshots/
+analysis_output*/
 
 analysis_tmp/
 single-orb-after-interaction.png

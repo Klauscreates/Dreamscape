@@ -16,4 +16,16 @@ single-orb-after-interaction.png
 *.csv
 *.md
 !README.md
+snapshots
+tests
+docs
+scripts
+.github
+*.mp3
+*.wav
+*.py
+*.sh
+requirements*.txt
+.env*
+.DS_Store
 *.pyc

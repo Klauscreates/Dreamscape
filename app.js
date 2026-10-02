@@ -1,3 +1,13 @@
+import { drawFingerprint, disposeDetachedOrbs } from "./orb.js";
+import {
+  mountExperience,
+  renderExperience,
+  updateRoomUI,
+  drawPlayer,
+  ui,
+  timeLabel,
+} from "./experience.js";
+
 const DEFAULT_CONFIG = {
   frameSize: 2048,
   hopSize: 512,
@@ -37,13 +47,7 @@ const state = {
     leftId: null,
     rightId: null,
   },
-  visuals: {
-    artifact: { yaw: 0.32, pitch: 0.18, zoom: 1, dragging: false, lastX: 0, lastY: 0 },
-    collision: { yaw: 0.18, pitch: -0.12, zoom: 1, dragging: false, lastX: 0, lastY: 0 },
-  },
 };
-
-window.__quantumSoundLab = { state };
 
 const audioInput = document.querySelector("#audio-files");
 const analyzeButton = document.querySelector("#analyze-button");
@@ -68,6 +72,12 @@ const liveState = {
   buildProgress: 0,
   isBuilding: false,
   buildMeta: null,
+  offset: 0,
+  startedAt: 0,
+  volume: 0.8,
+  loop: false,
+  gain: null,
+  timeData: null,
 };
 
 const roomState = {
@@ -86,6 +96,11 @@ const roomState = {
   sampleRate: 0,
   fftSize: 1024,
   lastUiRefreshAt: 0,
+  events: [],
+  frameCounter: 0,
+  pending: false,
+  requestId: 0,
+  lastSampleAt: 0,
 };
 
 // ─── Math helpers ────────────────────────────────────────────────────────────
@@ -115,7 +130,9 @@ function round(value, digits = 0) {
   return Math.round(value * scale) / scale;
 }
 
-function lerp(a, b, t) { return a + (b - a) * t; }
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
 
 function escapeHtml(value) {
   return String(value)
@@ -126,10 +143,12 @@ function escapeHtml(value) {
 }
 
 function slugify(value) {
-  return String(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "item";
+  return (
+    String(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "item"
+  );
 }
 
 function normalizeScore(value, minimum, maximum) {
@@ -139,7 +158,8 @@ function normalizeScore(value, minimum, maximum) {
 
 function dot(left, right) {
   let total = 0;
-  for (let index = 0; index < left.length; index += 1) total += left[index] * right[index];
+  for (let index = 0; index < left.length; index += 1)
+    total += left[index] * right[index];
   return total;
 }
 
@@ -263,17 +283,29 @@ function melToHz(value) {
   return 700 * (10 ** (value / 2595) - 1);
 }
 
-function createMelFilterBank(sampleRate, fftSize, bandCount = 24, lowHz = 40, highHz = 8000) {
+function createMelFilterBank(
+  sampleRate,
+  fftSize,
+  bandCount = 24,
+  lowHz = 40,
+  highHz = 8000,
+) {
   const nyquist = sampleRate / 2;
   const maxHz = Math.min(highHz, nyquist);
   const lowMel = hzToMel(lowHz);
   const highMel = hzToMel(maxHz);
-  const melPoints = Array.from({ length: bandCount + 2 }, (_, index) =>
-    lowMel + ((highMel - lowMel) * index) / (bandCount + 1)
+  const melPoints = Array.from(
+    { length: bandCount + 2 },
+    (_, index) => lowMel + ((highMel - lowMel) * index) / (bandCount + 1),
   );
   const hzPoints = melPoints.map(melToHz);
-  const bins = hzPoints.map((hz) => Math.floor((fftSize + 1) * hz / sampleRate));
-  const filters = Array.from({ length: bandCount }, () => new Float64Array(fftSize / 2 + 1));
+  const bins = hzPoints.map((hz) =>
+    Math.floor(((fftSize + 1) * hz) / sampleRate),
+  );
+  const filters = Array.from(
+    { length: bandCount },
+    () => new Float64Array(fftSize / 2 + 1),
+  );
 
   for (let band = 0; band < bandCount; band += 1) {
     const left = bins[band];
@@ -308,24 +340,43 @@ function dctTypeII(values, coefficientCount = 13) {
 }
 
 function inferKeyFromChroma(chroma) {
-  const labels = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
-  const majorTemplate = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
-  const minorTemplate = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+  const labels = [
+    "C",
+    "C#",
+    "D",
+    "Eb",
+    "E",
+    "F",
+    "F#",
+    "G",
+    "Ab",
+    "A",
+    "Bb",
+    "B",
+  ];
+  const majorTemplate = [
+    6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88,
+  ];
+  const minorTemplate = [
+    6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17,
+  ];
   const total = chroma.reduce((sum, value) => sum + value, 0) || 1;
   const normalized = chroma.map((value) => value / total);
   let best = { key: "Unknown", scale: "unknown", strength: 0 };
 
   for (let shift = 0; shift < 12; shift += 1) {
     const majorScore = normalized.reduce(
-      (sum, value, index) => sum + value * majorTemplate[(index - shift + 12) % 12],
-      0
+      (sum, value, index) =>
+        sum + value * majorTemplate[(index - shift + 12) % 12],
+      0,
     );
     if (majorScore > best.strength) {
       best = { key: labels[shift], scale: "major", strength: majorScore };
     }
     const minorScore = normalized.reduce(
-      (sum, value, index) => sum + value * minorTemplate[(index - shift + 12) % 12],
-      0
+      (sum, value, index) =>
+        sum + value * minorTemplate[(index - shift + 12) % 12],
+      0,
     );
     if (minorScore > best.strength) {
       best = { key: labels[shift], scale: "minor", strength: minorScore };
@@ -355,9 +406,11 @@ function computeRecurrenceSummary(mfccFrames, targetCount = 192) {
     const slice = mfccFrames.slice(index, index + stride);
     const meanVector = new Array(mfccFrames[0].length).fill(0);
     for (const row of slice) {
-      for (let dim = 0; dim < meanVector.length; dim += 1) meanVector[dim] += row[dim];
+      for (let dim = 0; dim < meanVector.length; dim += 1)
+        meanVector[dim] += row[dim];
     }
-    for (let dim = 0; dim < meanVector.length; dim += 1) meanVector[dim] /= slice.length;
+    for (let dim = 0; dim < meanVector.length; dim += 1)
+      meanVector[dim] /= slice.length;
     pooled.push(meanVector);
   }
 
@@ -408,12 +461,13 @@ function computeRecurrenceSummary(mfccFrames, targetCount = 192) {
   };
 }
 
-function computeAdvancedBrowserAnalysis(signal, sampleRate, config) {
+async function computeAdvancedBrowserAnalysis(signal, sampleRate, config) {
   const frameSize = config.frameSize;
   const hopSize = config.hopSize;
   const window = new Float32Array(frameSize);
   for (let index = 0; index < frameSize; index += 1) {
-    window[index] = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (frameSize - 1));
+    window[index] =
+      0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (frameSize - 1));
   }
   const frames = extractFrames(signal, frameSize, hopSize);
   const hzPerBin = sampleRate / frameSize;
@@ -424,7 +478,10 @@ function computeAdvancedBrowserAnalysis(signal, sampleRate, config) {
   const mfccFrames = [];
   const chromaFrames = [];
 
+  let advancedFrame = 0;
   for (const source of frames) {
+    if (++advancedFrame % 96 === 0)
+      await new Promise((resolve) => setTimeout(resolve, 0));
     const windowed = new Float32Array(frameSize);
     for (let index = 0; index < frameSize; index += 1) {
       windowed[index] = source[index] * window[index];
@@ -437,7 +494,8 @@ function computeAdvancedBrowserAnalysis(signal, sampleRate, config) {
 
     const melBands = melFilters.map((filter) => {
       let total = 0;
-      for (let bin = 0; bin < filter.length; bin += 1) total += power[bin] * filter[bin];
+      for (let bin = 0; bin < filter.length; bin += 1)
+        total += power[bin] * filter[bin];
       return Math.log10(1 + total);
     });
     const mfcc = dctTypeII(melBands, 13);
@@ -460,13 +518,17 @@ function computeAdvancedBrowserAnalysis(signal, sampleRate, config) {
     }
 
     chromaFrames.push(Array.from(chromaFrame));
-    for (let index = 0; index < 12; index += 1) meanChroma[index] += chromaFrame[index];
-    for (let index = 0; index < 36; index += 1) meanHpcp[index] += hpcpFrame[index];
-    for (let index = 0; index < 48; index += 1) cqtLike[index] += cqtFrame[index];
+    for (let index = 0; index < 12; index += 1)
+      meanChroma[index] += chromaFrame[index];
+    for (let index = 0; index < 36; index += 1)
+      meanHpcp[index] += hpcpFrame[index];
+    for (let index = 0; index < 48; index += 1)
+      cqtLike[index] += cqtFrame[index];
   }
 
   const normalize = (arrayLike) => {
-    const total = Array.from(arrayLike).reduce((sum, value) => sum + value, 0) || 1;
+    const total =
+      Array.from(arrayLike).reduce((sum, value) => sum + value, 0) || 1;
     return Array.from(arrayLike, (value) => value / total);
   };
 
@@ -503,7 +565,8 @@ async function analyzeFrames(signal, sampleRate, config, onProgress) {
   const hopSize = config.hopSize;
   const window = new Float32Array(frameSize);
   for (let index = 0; index < frameSize; index += 1) {
-    window[index] = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (frameSize - 1));
+    window[index] =
+      0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (frameSize - 1));
   }
   const frames = extractFrames(signal, frameSize, hopSize);
   const hzPerBin = sampleRate / frameSize;
@@ -522,7 +585,10 @@ async function analyzeFrames(signal, sampleRate, config, onProgress) {
       const value = source[index] * window[index];
       windowed[index] = value;
       rmsSum += value * value;
-      if (index > 0 && Math.sign(source[index]) !== Math.sign(source[index - 1])) {
+      if (
+        index > 0 &&
+        Math.sign(source[index]) !== Math.sign(source[index - 1])
+      ) {
         zcr += 1;
       }
     }
@@ -604,14 +670,17 @@ async function analyzeFrames(signal, sampleRate, config, onProgress) {
     const flatness =
       Math.exp(flatnessLog / Math.max(magnitude.length - 1, 1)) /
       Math.max(flatnessArithmetic / Math.max(magnitude.length - 1, 1), 1e-12);
-    const attackStrength = Math.max(0, flux) * Math.max(0, Math.sqrt(rmsSum / frameSize));
+    const attackStrength =
+      Math.max(0, flux) * Math.max(0, Math.sqrt(rmsSum / frameSize));
 
     features.push({
       time_s: (frameIndex * hopSize) / sampleRate,
       rms: Math.sqrt(rmsSum / frameSize),
       zcr: zcr / frameSize,
       spectral_centroid_hz: centroid,
-      spectral_spread_hz: Math.sqrt(spreadNumerator / Math.max(powerSum, 1e-12)),
+      spectral_spread_hz: Math.sqrt(
+        spreadNumerator / Math.max(powerSum, 1e-12),
+      ),
       spectral_rolloff_hz: rolloff,
       spectral_flatness: flatness,
       spectral_flux: flux,
@@ -637,12 +706,18 @@ async function analyzeFrames(signal, sampleRate, config, onProgress) {
   return {
     features,
     averageSpectrum,
-    spectrumFreqs: Array.from({ length: averageSpectrum.length }, (_, index) => index * hzPerBin),
+    spectrumFreqs: Array.from(
+      { length: averageSpectrum.length },
+      (_, index) => index * hzPerBin,
+    ),
   };
 }
 
 function modulationAnalysis(signal, sampleRate, config) {
-  const step = Math.max(1, Math.floor(sampleRate / Math.max(config.modulationResampleHz, 1)));
+  const step = Math.max(
+    1,
+    Math.floor(sampleRate / Math.max(config.modulationResampleHz, 1)),
+  );
   const coarse = [];
   for (let index = 0; index < signal.length; index += step) {
     const slice = signal.subarray(index, Math.min(signal.length, index + step));
@@ -652,14 +727,19 @@ function modulationAnalysis(signal, sampleRate, config) {
   const spectrum = fftReal(Float32Array.from(centered));
   const actualRate = sampleRate / step;
   const freqStep = actualRate / Math.max((spectrum.length - 1) * 2, 1);
-  const freqs = Array.from({ length: spectrum.length }, (_, index) => index * freqStep);
-  const totalPower = spectrum.reduce((sum, value) => sum + value * value, 0) || 1;
+  const freqs = Array.from(
+    { length: spectrum.length },
+    (_, index) => index * freqStep,
+  );
+  const totalPower =
+    spectrum.reduce((sum, value) => sum + value * value, 0) || 1;
   const bands = {};
 
   for (const [name, [low, high]] of Object.entries(BRAIN_BANDS)) {
     let bandPower = 0;
     for (let index = 0; index < freqs.length; index += 1) {
-      if (freqs[index] >= low && freqs[index] < high) bandPower += spectrum[index] * spectrum[index];
+      if (freqs[index] >= low && freqs[index] < high)
+        bandPower += spectrum[index] * spectrum[index];
     }
     bands[name] = bandPower / totalPower;
   }
@@ -692,9 +772,12 @@ function zscoreColumns(matrix) {
   const stdevs = Array(cols).fill(0);
   for (let col = 0; col < cols; col += 1) {
     means[col] = mean(matrix.map((row) => row[col]));
-    stdevs[col] = Math.sqrt(mean(matrix.map((row) => (row[col] - means[col]) ** 2))) || 1;
+    stdevs[col] =
+      Math.sqrt(mean(matrix.map((row) => (row[col] - means[col]) ** 2))) || 1;
   }
-  return matrix.map((row) => row.map((value, col) => (value - means[col]) / stdevs[col]));
+  return matrix.map((row) =>
+    row.map((value, col) => (value - means[col]) / stdevs[col]),
+  );
 }
 
 function powerIteration(matrix, iterations = 32) {
@@ -744,7 +827,11 @@ function computeEmbeddings(features) {
 
   const components = [];
   let working = covariance.map((row) => [...row]);
-  for (let componentIndex = 0; componentIndex < Math.min(3, dims); componentIndex += 1) {
+  for (
+    let componentIndex = 0;
+    componentIndex < Math.min(3, dims);
+    componentIndex += 1
+  ) {
     const { vector, eigenvalue } = powerIteration(working);
     if (!vector.length) break;
     components.push(vector);
@@ -755,7 +842,9 @@ function computeEmbeddings(features) {
     }
   }
 
-  return standardized.map((row) => components.map((component) => dot(row, component)));
+  return standardized.map((row) =>
+    components.map((component) => dot(row, component)),
+  );
 }
 
 function detectSegments(embeddings, features, config) {
@@ -764,8 +853,12 @@ function detectSegments(embeddings, features, config) {
     const prev = embeddings[index - 1];
     const current = embeddings[index];
     const next = embeddings[index + 1];
-    const left = Math.sqrt(current.reduce((sum, value, dim) => sum + (value - prev[dim]) ** 2, 0));
-    const right = Math.sqrt(current.reduce((sum, value, dim) => sum + (value - next[dim]) ** 2, 0));
+    const left = Math.sqrt(
+      current.reduce((sum, value, dim) => sum + (value - prev[dim]) ** 2, 0),
+    );
+    const right = Math.sqrt(
+      current.reduce((sum, value, dim) => sum + (value - next[dim]) ** 2, 0),
+    );
     return left + right;
   });
   const threshold = percentile(novelty, config.segmentationQuantile);
@@ -773,7 +866,11 @@ function detectSegments(embeddings, features, config) {
   let lastBoundary = -999;
 
   for (let index = 1; index < novelty.length - 1; index += 1) {
-    if (novelty[index] >= threshold && novelty[index] >= novelty[index - 1] && novelty[index] >= novelty[index + 1]) {
+    if (
+      novelty[index] >= threshold &&
+      novelty[index] >= novelty[index - 1] &&
+      novelty[index] >= novelty[index + 1]
+    ) {
       if (index - lastBoundary >= 16) {
         boundaries.push({
           frame: index,
@@ -792,7 +889,12 @@ function nearestCode(value, centers) {
   let bestIndex = 0;
   let bestDistance = Infinity;
   for (let index = 0; index < centers.length; index += 1) {
-    const distance = Math.sqrt(value.reduce((sum, item, dim) => sum + (item - centers[index][dim]) ** 2, 0));
+    const distance = Math.sqrt(
+      value.reduce(
+        (sum, item, dim) => sum + (item - centers[index][dim]) ** 2,
+        0,
+      ),
+    );
     if (distance < bestDistance) {
       bestDistance = distance;
       bestIndex = index;
@@ -802,7 +904,10 @@ function nearestCode(value, centers) {
 }
 
 function buildStructuralCodebook(features, embeddings, bandWeights, config) {
-  const clusterCount = Math.max(4, Math.min(8, Math.round(Math.sqrt(Math.max(embeddings.length, 1) / 24))));
+  const clusterCount = Math.max(
+    4,
+    Math.min(8, Math.round(Math.sqrt(Math.max(embeddings.length, 1) / 24))),
+  );
   let centers = embeddings.slice(0, clusterCount).map((row) => [...row]);
   if (!centers.length) centers = [[0, 0, 0]];
 
@@ -813,20 +918,32 @@ function buildStructuralCodebook(features, embeddings, bandWeights, config) {
     }
     centers = centers.map((center, index) => {
       if (!buckets[index].length) return center;
-      return center.map((_, dim) => mean(buckets[index].map((row) => row[dim])));
+      return center.map((_, dim) =>
+        mean(buckets[index].map((row) => row[dim])),
+      );
     });
   }
 
   const modulationLabel = Object.entries(BRAIN_BANDS)
-    .sort((left, right) => (bandWeights[right[0]] || 0) - (bandWeights[left[0]] || 0))[0][0]
+    .sort(
+      (left, right) =>
+        (bandWeights[right[0]] || 0) - (bandWeights[left[0]] || 0),
+    )[0][0]
     .toUpperCase()
     .slice(0, 3);
 
-  const attackThreshold = percentile(features.map((item) => item.attack_strength), 0.8);
-  const phaseThreshold = percentile(features.map((item) => item.phase_lock), 0.66);
+  const attackThreshold = percentile(
+    features.map((item) => item.attack_strength),
+    0.8,
+  );
+  const phaseThreshold = percentile(
+    features.map((item) => item.phase_lock),
+    0.66,
+  );
   const tokens = embeddings.map((row, index) => {
     const cluster = nearestCode(row, centers);
-    const attack = features[index].attack_strength > attackThreshold ? "A1" : "A0";
+    const attack =
+      features[index].attack_strength > attackThreshold ? "A1" : "A0";
     const phase = features[index].phase_lock > phaseThreshold ? "P1" : "P0";
     return `C${cluster}-${attack}-${phase}-${modulationLabel}`;
   });
@@ -854,9 +971,16 @@ function buildStructuralCodebook(features, embeddings, bandWeights, config) {
     }));
 
   const frequencies = new Map();
-  for (const token of tokens) frequencies.set(token, (frequencies.get(token) || 0) + 1);
-  const probabilities = [...frequencies.values()].map((count) => count / Math.max(tokens.length, 1));
-  const entropy = -probabilities.reduce((sum, probability) => sum + probability * Math.log2(Math.max(probability, 1e-12)), 0);
+  for (const token of tokens)
+    frequencies.set(token, (frequencies.get(token) || 0) + 1);
+  const probabilities = [...frequencies.values()].map(
+    (count) => count / Math.max(tokens.length, 1),
+  );
+  const entropy = -probabilities.reduce(
+    (sum, probability) =>
+      sum + probability * Math.log2(Math.max(probability, 1e-12)),
+    0,
+  );
   const maxEntropy = Math.log2(Math.max(frequencies.size, 2));
 
   return {
@@ -864,7 +988,9 @@ function buildStructuralCodebook(features, embeddings, bandWeights, config) {
     cluster_count: centers.length,
     unique_token_count: frequencies.size,
     sequence_entropy: entropy / Math.max(maxEntropy, 1),
-    compression_ratio: tokens.length ? new Blob([tokens.join(" ")]).size / Math.max(tokens.length * 12, 1) : 0,
+    compression_ratio: tokens.length
+      ? new Blob([tokens.join(" ")]).size / Math.max(tokens.length * 12, 1)
+      : 0,
     top_motifs: motifs,
   };
 }
@@ -873,11 +999,16 @@ function buildEvidenceModel(features, modulationBands, codebook, segmentation) {
   const phaseStability = mean(features.map((item) => item.phase_lock));
   const attackStrengths = features.map((item) => item.attack_strength);
   const attackThreshold = percentile(attackStrengths, 0.85);
-  const attackDensity = attackStrengths.filter((value) => value >= attackThreshold).length / Math.max(attackStrengths.length, 1);
+  const attackDensity =
+    attackStrengths.filter((value) => value >= attackThreshold).length /
+    Math.max(attackStrengths.length, 1);
   const head = features.slice(0, Math.max(1, Math.floor(features.length / 3)));
-  const tail = features.slice(Math.max(0, Math.floor((2 * features.length) / 3)));
+  const tail = features.slice(
+    Math.max(0, Math.floor((2 * features.length) / 3)),
+  );
   const timbralDrift = Math.abs(
-    mean(head.map((item) => item.spectral_centroid_hz)) - mean(tail.map((item) => item.spectral_centroid_hz))
+    mean(head.map((item) => item.spectral_centroid_hz)) -
+      mean(tail.map((item) => item.spectral_centroid_hz)),
   );
   const repetitionIndex = 1 - codebook.sequence_entropy;
   const dominantModulation = modulationBands.dominant_modulation_hz;
@@ -887,8 +1018,10 @@ function buildEvidenceModel(features, modulationBands, codebook, segmentation) {
   if (phaseStability > 0.82) descriptors.push("stable phase field");
   if (attackDensity > 0.12) descriptors.push("dense transient clusters");
   if (timbralDrift > 60) descriptors.push("strong timbral drift");
-  if (dominantModulation > 0.5 && dominantModulation < 4) descriptors.push("slow envelope pulsing");
-  if (segmentation.boundaries.length >= 3) descriptors.push("clear section boundaries");
+  if (dominantModulation > 0.5 && dominantModulation < 4)
+    descriptors.push("slow envelope pulsing");
+  if (segmentation.boundaries.length >= 3)
+    descriptors.push("clear section boundaries");
   if (!descriptors.length) descriptors.push("low-evidence continuous texture");
 
   return {
@@ -901,8 +1034,7 @@ function buildEvidenceModel(features, modulationBands, codebook, segmentation) {
       dominant_modulation_hz: dominantModulation,
       boundary_count: segmentation.boundaries.length,
     },
-    note:
-      "These outputs are measurement-driven structural evidence derived from recurrence, transients, modulation, and phase behavior. They are not claims of literal semantic decoding.",
+    note: "These outputs are measurement-driven structural evidence derived from recurrence, transients, modulation, and phase behavior. They are not claims of literal semantic decoding.",
   };
 }
 
@@ -910,30 +1042,38 @@ function topPeaks(freqs, spectrum) {
   const entries = [];
   for (let index = 2; index < spectrum.length - 2; index += 1) {
     const local = spectrum[index];
-    const prominence = local - 0.5 * (spectrum[index - 1] + spectrum[index + 1]);
+    const prominence =
+      local - 0.5 * (spectrum[index - 1] + spectrum[index + 1]);
     if (prominence <= 0) continue;
     entries.push({ freq_hz: freqs[index], strength: local, prominence });
   }
-  return entries.sort((left, right) => right.prominence - left.prominence).slice(0, 10);
+  return entries
+    .sort((left, right) => right.prominence - left.prominence)
+    .slice(0, 10);
 }
 
 // ─── Feature interpretation ───────────────────────────────────────────────────
 
 function summarizeReportMetrics(report) {
-  const centroidMean = mean(report.features.map((item) => item.spectral_centroid_hz));
-  const flatnessMean = mean(report.features.map((item) => item.spectral_flatness));
-  const spreadMean = mean(report.features.map((item) => item.spectral_spread_hz));
-  const fluxMean = mean(report.features.map((item) => item.spectral_flux));
-  const attackMean = mean(report.features.map((item) => item.attack_strength));
-  const zcrMean = mean(report.features.map((item) => item.zcr));
-  const phaseMean = mean(report.features.map((item) => item.phase_lock));
-  const rmsMean = mean(report.features.map((item) => item.rms));
-  const attackDensity = report.evidence.scores.attack_density || 0;
-  const repetitionIndex = report.evidence.scores.repetition_index || 0;
-  const modulationHz = report.modulationBands.dominant_modulation_hz || 0;
-  const dominantPeak = report.topPeaks[0]?.freq_hz || 0;
-  const recurrenceAffinity = report.advanced?.recurrence_mean_affinity || 0;
-  const keyStrength = report.advanced?.key_strength || 0;
+  const features = Array.isArray(report?.features) ? report.features : [];
+  const centroidMean = mean(
+    features.map((item) => item.spectral_centroid_hz || 0),
+  );
+  const flatnessMean = mean(
+    features.map((item) => item.spectral_flatness || 0),
+  );
+  const spreadMean = mean(features.map((item) => item.spectral_spread_hz || 0));
+  const fluxMean = mean(features.map((item) => item.spectral_flux || 0));
+  const attackMean = mean(features.map((item) => item.attack_strength || 0));
+  const zcrMean = mean(features.map((item) => item.zcr || 0));
+  const phaseMean = mean(features.map((item) => item.phase_lock || 0));
+  const rmsMean = mean(features.map((item) => item.rms || 0));
+  const attackDensity = report?.evidence?.scores?.attack_density || 0;
+  const repetitionIndex = report?.evidence?.scores?.repetition_index || 0;
+  const modulationHz = report?.modulationBands?.dominant_modulation_hz || 0;
+  const dominantPeak = report?.topPeaks?.[0]?.freq_hz || 0;
+  const recurrenceAffinity = report?.advanced?.recurrence_mean_affinity || 0;
+  const keyStrength = report?.advanced?.key_strength || 0;
   return {
     centroidMean,
     flatnessMean,
@@ -950,70 +1090,6 @@ function summarizeReportMetrics(report) {
     recurrenceAffinity,
     keyStrength,
   };
-}
-
-function getDominantBand(report) {
-  if (!report) return "n/a";
-  return Object.keys(BRAIN_BANDS).sort((left, right) => report.modulationBands[right] - report.modulationBands[left])[0];
-}
-
-function classifyTimbreSignature(report) {
-  const centroidMean = mean(report.features.map((item) => item.spectral_centroid_hz));
-  const flatnessMean = mean(report.features.map((item) => item.spectral_flatness));
-  const spreadMean = mean(report.features.map((item) => item.spectral_spread_hz));
-  const dominantPeak = report.topPeaks[0]?.freq_hz || 0;
-  const descriptors = [];
-
-  if (centroidMean >= 2800) descriptors.push("celestial shimmer");
-  else if (centroidMean >= 1400) descriptors.push("luminous air");
-  else descriptors.push("grounded resonance");
-
-  if (flatnessMean >= 0.42) descriptors.push("grain-rich vibration");
-  else if (flatnessMean >= 0.2) descriptors.push("balanced overtone field");
-  else descriptors.push("pure-tone stability");
-
-  if (spreadMean >= 2600) descriptors.push("wide spectral halo");
-  else descriptors.push("focused harmonic core");
-
-  if (dominantPeak <= 180 && dominantPeak > 0) descriptors.push("deep drone anchor");
-  else if (dominantPeak >= 1600) descriptors.push("high-frequency shimmer band");
-
-  return {
-    label: descriptors.join(", "),
-    centroid_mean_hz: centroidMean,
-    flatness_mean: flatnessMean,
-    spread_mean_hz: spreadMean,
-    dominant_peak_hz: dominantPeak,
-    dominant_band: getDominantBand(report),
-  };
-}
-
-function analyzeUniversalTuning(report) {
-  const peaks = report.topPeaks
-    .map((peak) => peak.freq_hz)
-    .filter((value) => value >= 40 && value <= 2000);
-  const references = [432, 440, 528];
-  const matches = peaks
-    .map((peak) => {
-      const candidates = references.map((reference) => {
-        const multiplier = Math.max(1, Math.round(peak / reference));
-        const target = reference * multiplier;
-        const cents = 1200 * Math.log2(peak / target);
-        return {
-          reference_hz: reference,
-          harmonic_multiple: multiplier,
-          target_hz: Number(target.toFixed(2)),
-          cents_off: Number(cents.toFixed(2)),
-          absolute_cents: Math.abs(cents),
-          observed_peak_hz: peak,
-        };
-      });
-      return candidates.sort((left, right) => left.absolute_cents - right.absolute_cents)[0];
-    })
-    .sort((left, right) => left.absolute_cents - right.absolute_cents)
-    .slice(0, 6);
-
-  return { strongest_match: matches[0] || null, matches };
 }
 
 function describeVibe(report) {
@@ -1056,73 +1132,9 @@ function describeVibe(report) {
 
   const [best, second] = candidates;
   if (!best || best.score < 1.2) return "Balanced / Searching";
-  if (second && best.score - second.score < 0.22) return `${best.label} with ${second.label.toLowerCase()} traits`;
+  if (second && best.score - second.score < 0.22)
+    return `${best.label} with ${second.label.toLowerCase()} traits`;
   return best.label;
-}
-
-function describeSoundQuality(report) {
-  const metrics = summarizeReportMetrics(report);
-  const peaks = report.topPeaks.map((item) => item.freq_hz).slice(0, 6);
-  let dissonanceHint = "stable harmonic spacing";
-
-  for (let index = 0; index < peaks.length; index += 1) {
-    for (let compare = index + 1; compare < peaks.length; compare += 1) {
-      const cents = Math.abs(1200 * Math.log2(peaks[compare] / peaks[index]));
-      const wrapped = Math.min(cents % 1200, 1200 - (cents % 1200));
-      if (wrapped > 70 && wrapped < 130) {
-        dissonanceHint = "close-frequency clash detected";
-        break;
-      }
-    }
-  }
-
-  const brightness = metrics.centroidMean >= 2400 ? "Bright" : metrics.centroidMean >= 1300 ? "Balanced" : "Dark";
-  const texture =
-    metrics.flatnessMean >= 0.35
-      ? "Harsh / Gritty"
-      : metrics.flatnessMean >= 0.18
-        ? "Clouded / Noisy"
-        : metrics.attackDensity > 0.15 && metrics.zcrMean > 0.06
-          ? "Heavy / Distorted"
-          : "Warm / Pure";
-  const harmonicField =
-    metrics.keyStrength >= 0.34
-      ? `key field favors ${(report.advanced?.estimated_key || "n/a")} ${(report.advanced?.estimated_scale || "")}`.trim()
-      : "key field is ambiguous";
-  return { brightness, texture, dissonance: dissonanceHint, harmonicField };
-}
-
-function describeTuningLabel(report) {
-  const tuning = analyzeUniversalTuning(report);
-  const best = tuning.strongest_match;
-  if (!best) return "Undetermined";
-  if (best.reference_hz === 432 && best.absolute_cents <= 12) return "Earth-Tuned (432Hz family)";
-  if (best.reference_hz === 440 && best.absolute_cents <= 12) return "Standard Concert Tuning (440Hz family)";
-  if (best.reference_hz === 528 && best.absolute_cents <= 18) return "528Hz-adjacent harmonic family";
-  return `Closest to ${best.reference_hz}Hz family`;
-}
-
-function buildHumanReadout(report) {
-  const cosmic = classifyTimbreSignature(report);
-  const quality = describeSoundQuality(report);
-  const dominantBand = getDominantBand(report);
-  let bodyState = "Open Listening";
-  if (dominantBand === "beta" || dominantBand === "gamma") bodyState = "Focus Mode";
-  else if (dominantBand === "alpha" || dominantBand === "theta") bodyState = "Meditation / Trance";
-  else if (dominantBand === "delta") bodyState = "Grounded / Heavy Drift";
-
-  return {
-    vibe: describeVibe(report),
-    quality: `${quality.brightness} • ${quality.texture}`,
-    body: bodyState,
-    tuning: describeTuningLabel(report),
-    spiritual: cosmic.label,
-    details: {
-      harmony_alignment: quality.dissonance === "stable harmonic spacing" ? "Aligned" : "Tension present",
-      dissonance: quality.dissonance,
-      harmonic_field: quality.harmonicField,
-    },
-  };
 }
 
 function buildStateEngineering(report) {
@@ -1137,7 +1149,7 @@ function buildStateEngineering(report) {
       normalizeScore(metrics.zcrMean, 0.015, 0.12) * 14 +
       normalizeScore(metrics.centroidMean, 700, 4200) * 12,
     0,
-    100
+    100,
   );
   const focus = clamp(
     22 +
@@ -1147,7 +1159,7 @@ function buildStateEngineering(report) {
       normalizeScore(metrics.attackDensity, 0.05, 0.24) * 14 -
       normalizeScore(metrics.flatnessMean, 0.08, 0.42) * 8,
     0,
-    100
+    100,
   );
   const chill = clamp(
     26 +
@@ -1157,7 +1169,7 @@ function buildStateEngineering(report) {
       normalizeScore(8 - metrics.modulationHz, -10, 5) * 12 -
       normalizeScore(metrics.rmsMean, 0.05, 0.25) * 10,
     0,
-    100
+    100,
   );
 
   let adjustedHype = hype;
@@ -1167,14 +1179,16 @@ function buildStateEngineering(report) {
   if (vibe.includes("rage") || vibe.includes("aggressive")) adjustedHype += 18;
   if (vibe.includes("rage") || vibe.includes("aggressive")) adjustedChill -= 18;
   if (vibe.includes("anxious") || vibe.includes("tense")) adjustedHype += 10;
-  if (vibe.includes("meditative") || vibe.includes("trance")) adjustedChill += 16;
+  if (vibe.includes("meditative") || vibe.includes("trance"))
+    adjustedChill += 16;
   if (vibe.includes("chill") || vibe.includes("spacey")) adjustedChill += 18;
   if (vibe.includes("driving") || vibe.includes("ritual")) adjustedFocus += 10;
 
   if (energy.label === "Explosive") adjustedHype += 16;
   else if (energy.label === "Aggressive") adjustedHype += 12;
   else if (energy.label === "Driving") adjustedFocus += 8;
-  else if (energy.label === "Calm" || energy.label === "Soft") adjustedChill += 10;
+  else if (energy.label === "Calm" || energy.label === "Soft")
+    adjustedChill += 10;
 
   const entries = [
     { label: "Hype", score: Math.round(clamp(adjustedHype, 0, 100)) },
@@ -1184,7 +1198,8 @@ function buildStateEngineering(report) {
 
   const top = entries[0];
   let verdict = `${top.score}% ${top.label} profile`;
-  let guidance = "Balanced enough to move between work, transit, and casual listening.";
+  let guidance =
+    "Balanced enough to move between work, transit, and casual listening.";
 
   if (top.label === "Hype") {
     guidance =
@@ -1217,13 +1232,13 @@ function buildEnergyRead(report) {
       normalizeScore(metrics.attackDensity, 0.02, 0.22) * 18 +
       normalizeScore(metrics.fluxMean, 0.04, 0.35) * 12,
     0,
-    100
+    100,
   );
   const shockScore = clamp(
     normalizeScore(dynamicLift, 0.01, 0.16) * 55 +
       normalizeScore(metrics.attackMean, 0.002, 0.16) * 45,
     0,
-    100
+    100,
   );
 
   let label = "Calm";
@@ -1256,21 +1271,33 @@ function buildCompareRead(left, right) {
   if (!left || !right) {
     return {
       title: "Compare Songs unlocks when two files are loaded.",
-      summary: "Upload a second track and this card will explain where they diverge in brightness, impact, repetition, and pulse.",
+      summary:
+        "Upload a second track and this card will explain where they diverge in brightness, impact, repetition, and pulse.",
       stats: [],
     };
   }
 
   const leftMetrics = summarizeReportMetrics(left);
   const rightMetrics = summarizeReportMetrics(right);
-  const brighter = leftMetrics.centroidMean >= rightMetrics.centroidMean ? left : right;
-  const harder = leftMetrics.attackDensity >= rightMetrics.attackDensity ? left : right;
-  const steadier = leftMetrics.repetitionIndex >= rightMetrics.repetitionIndex ? left : right;
+  const brighter =
+    leftMetrics.centroidMean >= rightMetrics.centroidMean ? left : right;
+  const harder =
+    leftMetrics.attackDensity >= rightMetrics.attackDensity ? left : right;
+  const steadier =
+    leftMetrics.repetitionIndex >= rightMetrics.repetitionIndex ? left : right;
   const rougher = leftMetrics.zcrMean >= rightMetrics.zcrMean ? left : right;
-  const brightnessGap = Math.abs(leftMetrics.centroidMean - rightMetrics.centroidMean);
-  const attackGap = Math.abs(leftMetrics.attackDensity - rightMetrics.attackDensity);
-  const repetitionGap = Math.abs(leftMetrics.repetitionIndex - rightMetrics.repetitionIndex);
-  const recurrenceGap = Math.abs(leftMetrics.recurrenceAffinity - rightMetrics.recurrenceAffinity);
+  const brightnessGap = Math.abs(
+    leftMetrics.centroidMean - rightMetrics.centroidMean,
+  );
+  const attackGap = Math.abs(
+    leftMetrics.attackDensity - rightMetrics.attackDensity,
+  );
+  const repetitionGap = Math.abs(
+    leftMetrics.repetitionIndex - rightMetrics.repetitionIndex,
+  );
+  const recurrenceGap = Math.abs(
+    leftMetrics.recurrenceAffinity - rightMetrics.recurrenceAffinity,
+  );
   const keyMatch =
     left.advanced?.estimated_key &&
     left.advanced?.estimated_key === right.advanced?.estimated_key &&
@@ -1297,12 +1324,18 @@ function buildCompareRead(left, right) {
       {
         label: "Attack Gap",
         value: attackGap < 0.0005 ? "< 0.001" : attackGap.toFixed(3),
-        note: attackGap < 0.0005 ? "Virtually tied on attack density" : `${harder.name} hits harder`,
+        note:
+          attackGap < 0.0005
+            ? "Virtually tied on attack density"
+            : `${harder.name} hits harder`,
       },
       {
         label: "Pattern Lock",
         value: repetitionGap < 0.0005 ? "< 0.001" : repetitionGap.toFixed(3),
-        note: repetitionGap < 0.0005 ? "Virtually tied on repetition" : `${steadier.name} repeats more tightly`,
+        note:
+          repetitionGap < 0.0005
+            ? "Virtually tied on repetition"
+            : `${steadier.name} repeats more tightly`,
       },
       {
         label: "Recurrence",
@@ -1323,33 +1356,64 @@ function buildCollisionRead(left, right) {
     return {
       score: null,
       label: "Waiting for a second track.",
-      summary: "Load two songs and the experimental collision engine will estimate whether the signatures merge, wobble, or clash.",
+      summary:
+        "Load two songs and the experimental collision engine will estimate whether the signatures merge, wobble, or clash.",
     };
   }
 
   const leftMetrics = summarizeReportMetrics(left);
   const rightMetrics = summarizeReportMetrics(right);
-  const centroidDistance = normalizeScore(Math.abs(leftMetrics.centroidMean - rightMetrics.centroidMean), 0, 3200);
-  const modulationDistance = normalizeScore(Math.abs(leftMetrics.modulationHz - rightMetrics.modulationHz), 0, 14);
-  const phaseDistance = normalizeScore(Math.abs(leftMetrics.phaseMean - rightMetrics.phaseMean), 0, 0.8);
-  const repetitionDistance = normalizeScore(Math.abs(leftMetrics.repetitionIndex - rightMetrics.repetitionIndex), 0, 0.4);
-  const peakDistance = normalizeScore(
-    Math.abs((left.topPeaks[0]?.freq_hz || 0) - (right.topPeaks[0]?.freq_hz || 0)),
+  const centroidDistance = normalizeScore(
+    Math.abs(leftMetrics.centroidMean - rightMetrics.centroidMean),
     0,
-    1800
+    3200,
+  );
+  const modulationDistance = normalizeScore(
+    Math.abs(leftMetrics.modulationHz - rightMetrics.modulationHz),
+    0,
+    14,
+  );
+  const phaseDistance = normalizeScore(
+    Math.abs(leftMetrics.phaseMean - rightMetrics.phaseMean),
+    0,
+    0.8,
+  );
+  const repetitionDistance = normalizeScore(
+    Math.abs(leftMetrics.repetitionIndex - rightMetrics.repetitionIndex),
+    0,
+    0.4,
+  );
+  const peakDistance = normalizeScore(
+    Math.abs(
+      (left.topPeaks[0]?.freq_hz || 0) - (right.topPeaks[0]?.freq_hz || 0),
+    ),
+    0,
+    1800,
   );
   const harmonyScore = Math.round(
-    clamp(100 - (centroidDistance * 26 + modulationDistance * 20 + phaseDistance * 18 + repetitionDistance * 16 + peakDistance * 20), 0, 100)
+    clamp(
+      100 -
+        (centroidDistance * 26 +
+          modulationDistance * 20 +
+          phaseDistance * 18 +
+          repetitionDistance * 16 +
+          peakDistance * 20),
+      0,
+      100,
+    ),
   );
 
   let label = "Hard Clash";
-  let summary = "The signatures collide with a lot of mismatch, so the visual should feel unstable and shard-heavy.";
+  let summary =
+    "The signatures collide with a lot of mismatch, so the visual should feel unstable and shard-heavy.";
   if (harmonyScore >= 74) {
     label = "Clean Merge";
-    summary = "The signatures line up well enough to merge into a shared glowing core instead of breaking apart.";
+    summary =
+      "The signatures line up well enough to merge into a shared glowing core instead of breaking apart.";
   } else if (harmonyScore >= 48) {
     label = "Unstable Blend";
-    summary = "The signatures partially merge but keep fighting each other, which should read as wobble and intermittent fracture.";
+    summary =
+      "The signatures partially merge but keep fighting each other, which should read as wobble and intermittent fracture.";
   }
 
   return { score: harmonyScore, label, summary };
@@ -1372,7 +1436,7 @@ function buildStudySoundCoach(report) {
       normalizeScore(1800 - metrics.centroidMean, -2200, 1500) * 14 +
       normalizeScore(0.2 - metrics.fluxMean, -0.2, 0.16) * 12,
     0,
-    100
+    100,
   );
   const writing = clamp(
     28 +
@@ -1381,17 +1445,22 @@ function buildStudySoundCoach(report) {
       normalizeScore(0.18 - metrics.attackDensity, -0.1, 0.14) * 16 +
       normalizeScore(10 - metrics.modulationHz, -10, 7) * 12,
     0,
-    100
+    100,
   );
   const coding = clamp(
     26 +
-      normalizeScore(stateScore.entries.find((entry) => entry.label === "Focus")?.score || 0, 35, 95) * 34 +
+      normalizeScore(
+        stateScore.entries.find((entry) => entry.label === "Focus")?.score || 0,
+        35,
+        95,
+      ) *
+        34 +
       normalizeScore(metrics.repetitionIndex, 0.03, 0.45) * 18 +
       normalizeScore(metrics.phaseMean, 0.45, 0.94) * 12 +
       normalizeScore(metrics.rmsMean, 0.03, 0.17) * 8 -
       normalizeScore(metrics.flatnessMean, 0.14, 0.44) * 8,
     0,
-    100
+    100,
   );
   const memorization = clamp(
     30 +
@@ -1400,43 +1469,63 @@ function buildStudySoundCoach(report) {
       normalizeScore(metrics.phaseMean, 0.45, 0.95) * 16 +
       normalizeScore(7 - Math.abs(metrics.modulationHz - 6), -7, 7) * 10,
     0,
-    100
+    100,
   );
   const recovery = clamp(
     24 +
-      normalizeScore(stateScore.entries.find((entry) => entry.label === "Chill")?.score || 0, 35, 95) * 32 +
+      normalizeScore(
+        stateScore.entries.find((entry) => entry.label === "Chill")?.score || 0,
+        35,
+        95,
+      ) *
+        32 +
       normalizeScore(0.16 - metrics.attackDensity, -0.1, 0.14) * 18 +
       normalizeScore(1500 - metrics.centroidMean, -2500, 1600) * 14 +
       normalizeScore(0.16 - metrics.rmsMean, -0.18, 0.12) * 12,
     0,
-    100
+    100,
   );
 
   const tasks = [
     {
       label: "Reading",
       score: Math.round(reading),
-      note: reading >= 70 ? "Steady enough to sit behind dense material without constantly poking your attention." : "May add more motion than dense reading usually wants.",
+      note:
+        reading >= 70
+          ? "Steady enough to sit behind dense material without constantly poking your attention."
+          : "May add more motion than dense reading usually wants.",
     },
     {
       label: "Writing",
       score: Math.round(writing),
-      note: writing >= 70 ? "Patterned enough to keep you moving while leaving room for language generation." : "Could push too hard or wander too much for drafting.",
+      note:
+        writing >= 70
+          ? "Patterned enough to keep you moving while leaving room for language generation."
+          : "Could push too hard or wander too much for drafting.",
     },
     {
       label: "Coding",
       score: Math.round(coding),
-      note: coding >= 70 ? "Locks into task cadence well and carries enough drive for longer focus blocks." : "Structure is weaker or rougher than ideal for long implementation sessions.",
+      note:
+        coding >= 70
+          ? "Locks into task cadence well and carries enough drive for longer focus blocks."
+          : "Structure is weaker or rougher than ideal for long implementation sessions.",
     },
     {
       label: "Memorization",
       score: Math.round(memorization),
-      note: memorization >= 70 ? "Repeats and breathes in a way that supports recall rather than surprise." : "Too jumpy or too shapeless to be ideal for flashcards and retention.",
+      note:
+        memorization >= 70
+          ? "Repeats and breathes in a way that supports recall rather than surprise."
+          : "Too jumpy or too shapeless to be ideal for flashcards and retention.",
     },
     {
       label: "Recovery",
       score: Math.round(recovery),
-      note: recovery >= 70 ? "This one cools the system down and gives your attention a chance to unclench." : "Still carries too much tension or motion for real recovery.",
+      note:
+        recovery >= 70
+          ? "This one cools the system down and gives your attention a chance to unclench."
+          : "Still carries too much tension or motion for real recovery.",
     },
   ].sort((left, right) => right.score - left.score);
 
@@ -1455,11 +1544,14 @@ function buildStudySoundCoach(report) {
       : `${report.name} is not a universal study track. It leans most toward ${best.label.toLowerCase()}, while ${worst.label.toLowerCase()} is the weakest use case.`;
 
   const cautionFlags = [];
-  if (energy.label === "Explosive" || energy.label === "Aggressive") cautionFlags.push("impact-heavy");
+  if (energy.label === "Explosive" || energy.label === "Aggressive")
+    cautionFlags.push("impact-heavy");
   if (metrics.attackDensity > 0.14) cautionFlags.push("transient-spiky");
-  if (metrics.spreadMean > 1900 || metrics.flatnessMean > 0.28) cautionFlags.push("texture-distracting");
+  if (metrics.spreadMean > 1900 || metrics.flatnessMean > 0.28)
+    cautionFlags.push("texture-distracting");
   if (metrics.modulationHz > 10) cautionFlags.push("fast-pulsing");
-  if (metrics.recurrenceAffinity > 0.58) cautionFlags.push("high recurrence lock");
+  if (metrics.recurrenceAffinity > 0.58)
+    cautionFlags.push("high recurrence lock");
   cautionFlags.push(harmonicField);
   if (!cautionFlags.length) cautionFlags.push("stable-background");
 
@@ -1470,7 +1562,8 @@ function buildPlaylistCleanser(reports) {
   if (!reports.length) {
     return {
       headline: "Load a playlist to audit it.",
-      summary: "Dreamscape will flag the tracks that are most likely to break concentration.",
+      summary:
+        "Dreamscape will flag the tracks that are most likely to break concentration.",
       tracks: [],
       safest: null,
       riskiest: null,
@@ -1490,24 +1583,32 @@ function buildPlaylistCleanser(reports) {
         normalizeScore(shock, 25, 90) * 18 +
         normalizeScore(metrics.centroidMean, 900, 4200) * 10,
       0,
-      100
+      100,
     );
     const studySupport = clamp(
-      normalizeScore(stateScore.entries.find((entry) => entry.label === "Focus")?.score || 0, 35, 95) * 36 +
+      normalizeScore(
+        stateScore.entries.find((entry) => entry.label === "Focus")?.score || 0,
+        35,
+        95,
+      ) *
+        36 +
         normalizeScore(metrics.phaseMean, 0.42, 0.94) * 18 +
         normalizeScore(metrics.repetitionIndex, 0.02, 0.45) * 18 +
         normalizeScore(0.18 - metrics.attackDensity, -0.1, 0.16) * 14 +
         normalizeScore(0.18 - metrics.flatnessMean, -0.2, 0.14) * 14,
       0,
-      100
+      100,
     );
 
     const tags = [];
     if (studyBreak >= 62) tags.push({ label: "breaks focus", tone: "warn" });
     if (shock >= 60) tags.push({ label: "spike-heavy", tone: "warn" });
-    if (metrics.centroidMean > 2400 || metrics.spreadMean > 2100) tags.push({ label: "top-end busy", tone: "warn" });
-    if (studySupport >= 64) tags.push({ label: "holds concentration", tone: "good" });
-    if (metrics.repetitionIndex >= 0.18) tags.push({ label: "pattern-locked", tone: "good" });
+    if (metrics.centroidMean > 2400 || metrics.spreadMean > 2100)
+      tags.push({ label: "top-end busy", tone: "warn" });
+    if (studySupport >= 64)
+      tags.push({ label: "holds concentration", tone: "good" });
+    if (metrics.repetitionIndex >= 0.18)
+      tags.push({ label: "pattern-locked", tone: "good" });
     if (!tags.length) tags.push({ label: "neutral", tone: "" });
 
     return {
@@ -1525,15 +1626,26 @@ function buildPlaylistCleanser(reports) {
     };
   });
 
-  const riskiest = [...tracks].sort((left, right) => right.disruption - left.disruption)[0];
-  const safest = [...tracks].sort((left, right) => right.support - left.support)[0];
-  const sorted = [...tracks].sort((left, right) => (right.disruption - right.support) - (left.disruption - left.support));
+  const riskiest = [...tracks].sort(
+    (left, right) => right.disruption - left.disruption,
+  )[0];
+  const safest = [...tracks].sort(
+    (left, right) => right.support - left.support,
+  )[0];
+  const sorted = [...tracks].sort(
+    (left, right) =>
+      right.disruption - right.support - (left.disruption - left.support),
+  );
 
   return {
-    headline: reports.length > 1 ? "Playlist Cleanser active." : "Single-track cleanser preview.",
-    summary: safest && riskiest
-      ? `${safest.name} is the safest study hold. ${riskiest.name} is the most likely to snap concentration.`
-      : "Load more tracks to compare study safety across a playlist.",
+    headline:
+      reports.length > 1
+        ? "Playlist Cleanser active."
+        : "Single-track cleanser preview.",
+    summary:
+      safest && riskiest
+        ? `${safest.name} is the safest study hold. ${riskiest.name} is the most likely to snap concentration.`
+        : "Load more tracks to compare study safety across a playlist.",
     tracks: sorted,
     safest,
     riskiest,
@@ -1542,9 +1654,13 @@ function buildPlaylistCleanser(reports) {
 
 function bucketAverage(values, start, end) {
   const safeStart = Math.max(0, Math.floor(start));
-  const safeEnd = Math.min(values.length, Math.max(safeStart + 1, Math.ceil(end)));
+  const safeEnd = Math.min(
+    values.length,
+    Math.max(safeStart + 1, Math.ceil(end)),
+  );
   let total = 0;
-  for (let index = safeStart; index < safeEnd; index += 1) total += values[index];
+  for (let index = safeStart; index < safeEnd; index += 1)
+    total += values[index];
   return total / Math.max(1, safeEnd - safeStart);
 }
 
@@ -1557,13 +1673,15 @@ function getRoomScanAvailability() {
   if (!window.isSecureContext && location.protocol !== "file:") {
     return {
       supported: false,
-      reason: "Room Scan needs a secure context. Open Dreamscape on localhost or HTTPS to use the microphone.",
+      reason:
+        "Room Scan needs a secure context. Open Dreamscape on localhost or HTTPS to use the microphone.",
     };
   }
   if (location.protocol === "file:") {
     return {
       supported: false,
-      reason: "Room Scan is blocked on file:// in most browsers. Start the local server and open Dreamscape on http://127.0.0.1:8000.",
+      reason:
+        "Room Scan is blocked on file:// in most browsers. Start the local server and open Dreamscape on http://127.0.0.1:8000.",
     };
   }
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -1577,9 +1695,12 @@ function getRoomScanAvailability() {
 
 function buildRoomSummary(history, spots) {
   if (!history.length) {
-    let bestSeat = "Mark multiple spots while walking around to find the calmest seat.";
+    let bestSeat =
+      "Mark multiple spots while walking around to find the calmest seat.";
     if (spots.length >= 2) {
-      const sortedSpots = [...spots].sort((left, right) => left.focusFit - right.focusFit);
+      const sortedSpots = [...spots].sort(
+        (left, right) => left.focusFit - right.focusFit,
+      );
       const best = sortedSpots[sortedSpots.length - 1];
       const worst = sortedSpots[0];
       bestSeat = `${best.label} was the calmest saved position. ${worst.label} was the noisiest.`;
@@ -1594,7 +1715,9 @@ function buildRoomSummary(history, spots) {
       speechScore: 0,
       rumbleScore: 0,
       interruptions: "No live room data yet.",
-      hiddenNoises: ["Microphone input is off, so there is no room signature to inspect yet."],
+      hiddenNoises: [
+        "Microphone input is off, so there is no room signature to inspect yet.",
+      ],
       bestSeat,
     };
   }
@@ -1607,35 +1730,67 @@ function buildRoomSummary(history, spots) {
   const buzzScore = avg("buzz");
   const keyboardScore = avg("keyboard");
   const slamScore = avg("slam");
-  const focusFit = Math.round(clamp(100 - (chaosScore * 0.5 + speechScore * 0.28 + rumbleScore * 0.18), 0, 100));
+  const focusFit = Math.round(
+    clamp(
+      100 - (chaosScore * 0.5 + speechScore * 0.28 + rumbleScore * 0.18),
+      0,
+      100,
+    ),
+  );
 
   let roomTone = "Calm and work-friendly.";
   if (chaosScore >= 70) roomTone = "Chaotic and interruption-heavy.";
-  else if (speechScore >= 62) roomTone = "Speech-contaminated and socially busy.";
-  else if (rumbleScore >= 60) roomTone = "Low-end heavy and physically fatiguing.";
-  else if (focusFit >= 72) roomTone = "Steady enough for reading, coding, and longer focus blocks.";
+  else if (speechScore >= 62)
+    roomTone = "Speech-contaminated and socially busy.";
+  else if (rumbleScore >= 60) roomTone = "Low-frequency energy is prominent.";
+  else if (focusFit >= 72)
+    roomTone = "Steady enough for reading, coding, and longer focus blocks.";
 
   const hiddenNoises = [];
-  if (humScore >= 0.34) hiddenNoises.push("Persistent low hum suggests HVAC, AC, or building systems.");
-  if (buzzScore >= 0.26) hiddenNoises.push("A bright narrow buzz suggests fluorescent lighting, chargers, or electronics.");
-  if (speechScore >= 48) hiddenNoises.push("Voice-range activity is present, even if the room does not feel obviously loud.");
-  if (keyboardScore >= 0.22) hiddenNoises.push("Short high-frequency clicks resemble keyboard chatter or utensil/clatter noise.");
-  if (slamScore >= 0.2) hiddenNoises.push("Sudden broadband bursts suggest doors, dropped objects, or abrupt interruptions.");
-  if (rumbleScore >= 54) hiddenNoises.push("Low-end rumble is elevated enough to wear on concentration over time.");
-  if (!hiddenNoises.length) hiddenNoises.push("No single hidden noise dominates. The room signature is comparatively smooth.");
+  if (humScore >= 0.34)
+    hiddenNoises.push(
+      "Persistent low hum suggests HVAC, AC, or building systems.",
+    );
+  if (buzzScore >= 0.26)
+    hiddenNoises.push(
+      "A bright narrow buzz suggests fluorescent lighting, chargers, or electronics.",
+    );
+  if (speechScore >= 48)
+    hiddenNoises.push(
+      "Voice-range activity is present, even if the room does not feel obviously loud.",
+    );
+  if (keyboardScore >= 0.22)
+    hiddenNoises.push(
+      "Short high-frequency clicks resemble keyboard chatter or utensil/clatter noise.",
+    );
+  if (slamScore >= 0.2)
+    hiddenNoises.push(
+      "Sudden broadband bursts suggest doors, dropped objects, or abrupt interruptions.",
+    );
+  if (rumbleScore >= 54)
+    hiddenNoises.push(
+      "Elevated low-frequency activity may be worth comparing at another location.",
+    );
+  if (!hiddenNoises.length)
+    hiddenNoises.push(
+      "No single hidden noise dominates. The room signature is comparatively smooth.",
+    );
 
   const interruptions =
     chaosScore >= 65 && speechScore < 45
       ? "This room is not just loud. It is interruption-heavy, with unstable spikes that will keep yanking attention."
       : speechScore >= 55
-        ? "The room’s main problem is voice-range activity. It may feel manageable, but your language system will keep noticing it."
+        ? "Voice-range activity is prominent in the recent samples."
         : focusFit >= 72
           ? "The room stays fairly even. You are mostly fighting baseline ambience, not random interruption bursts."
           : "The room is workable, but it has enough instability that long focus blocks will probably feel harder than they should.";
 
-  let bestSeat = "Mark a few spots while moving around the room and Dreamscape will tell you which one is calmest.";
+  let bestSeat =
+    "Mark a few spots while moving around the room and Dreamscape will tell you which one is calmest.";
   if (spots.length >= 2) {
-    const sortedSpots = [...spots].sort((left, right) => left.focusFit - right.focusFit);
+    const sortedSpots = [...spots].sort(
+      (left, right) => left.focusFit - right.focusFit,
+    );
     const best = sortedSpots[sortedSpots.length - 1];
     const worst = sortedSpots[0];
     bestSeat = `${best.label} is currently the calmest saved position. ${worst.label} is the noisiest.`;
@@ -1656,12 +1811,75 @@ function buildRoomSummary(history, spots) {
   };
 }
 
+function buildRoomScanAdvice(room) {
+  const reading = clamp(
+    Math.round(room.focusFit - room.speechScore * 0.35 - room.chaosScore * 0.2),
+    0,
+    100,
+  );
+  const coding = clamp(
+    Math.round(
+      room.focusFit - room.chaosScore * 0.28 - room.rumbleScore * 0.12,
+    ),
+    0,
+    100,
+  );
+  const memorization = clamp(
+    Math.round(
+      room.focusFit - room.speechScore * 0.52 - room.chaosScore * 0.18,
+    ),
+    0,
+    100,
+  );
+  const recovery = clamp(
+    Math.round(100 - room.chaosScore * 0.45 - room.rumbleScore * 0.18),
+    0,
+    100,
+  );
+  const entries = [
+    { label: "Reading", score: reading },
+    { label: "Coding", score: coding },
+    { label: "Memory", score: memorization },
+    { label: "Recovery", score: recovery },
+  ].sort((left, right) => right.score - left.score);
+
+  let action =
+    "Start scanning, then walk around and mark a few seats. Dreamscape will call out the calmest spot.";
+  if (room.focusFit > 0) {
+    if (room.speechScore >= 58) {
+      action =
+        "Move away from conversations, counters, doors, or shared tables. The speech band is the attention leak.";
+    } else if (room.chaosScore >= 62) {
+      action =
+        "Avoid doors, printers, hard surfaces, and traffic paths. The room is spike-heavy even if it is not loud.";
+    } else if (room.rumbleScore >= 58) {
+      action =
+        "Try a different wall or corner and compare the low-frequency activity.";
+    } else if (room.focusFit >= 72) {
+      action =
+        "This is a solid focus pocket. Save this spot and use it for longer reading, coding, or writing blocks.";
+    } else {
+      action =
+        "This room is usable, but not clean. Mark a few positions to find the smoothest seat.";
+    }
+  }
+
+  return {
+    bestTask: entries[0],
+    entries,
+    action,
+  };
+}
+
 function computeRoomFrameSummary() {
-  if (!roomState.analyser || !roomState.freqData || !roomState.timeData) return null;
+  if (!roomState.analyser || !roomState.freqData || !roomState.timeData)
+    return null;
   roomState.analyser.getFloatFrequencyData(roomState.freqData);
   roomState.analyser.getFloatTimeDomainData(roomState.timeData);
 
-  const normalizedSpectrum = Array.from(roomState.freqData, (value) => normalizeScore(value, -105, -20));
+  const normalizedSpectrum = Array.from(roomState.freqData, (value) =>
+    normalizeScore(value, -105, -20),
+  );
   const compactSpectrum = Array.from({ length: 72 }, (_, index) => {
     const start = (index / 72) * normalizedSpectrum.length;
     const end = ((index + 1) / 72) * normalizedSpectrum.length;
@@ -1675,7 +1893,11 @@ function computeRoomFrameSummary() {
     const sample = roomState.timeData[index];
     sumSquares += sample * sample;
     peak = Math.max(peak, Math.abs(sample));
-    if (index > 0 && Math.sign(roomState.timeData[index - 1]) !== Math.sign(sample)) zeroCrossings += 1;
+    if (
+      index > 0 &&
+      Math.sign(roomState.timeData[index - 1]) !== Math.sign(sample)
+    )
+      zeroCrossings += 1;
   }
   const rms = Math.sqrt(sumSquares / Math.max(1, roomState.timeData.length));
   const zcr = zeroCrossings / Math.max(1, roomState.timeData.length - 1);
@@ -1683,7 +1905,9 @@ function computeRoomFrameSummary() {
   let flux = 0;
   if (roomState.previousSpectrum) {
     for (let index = 0; index < compactSpectrum.length; index += 1) {
-      flux += Math.abs(compactSpectrum[index] - roomState.previousSpectrum[index]);
+      flux += Math.abs(
+        compactSpectrum[index] - roomState.previousSpectrum[index],
+      );
     }
     flux /= compactSpectrum.length;
   }
@@ -1691,16 +1915,34 @@ function computeRoomFrameSummary() {
 
   const sampleRate = roomState.sampleRate || audioContext.sampleRate;
   const fftSize = roomState.fftSize;
-  const speech = bandAverage(normalizedSpectrum, sampleRate, fftSize, 250, 4000);
+  const speech = bandAverage(
+    normalizedSpectrum,
+    sampleRate,
+    fftSize,
+    250,
+    4000,
+  );
   const rumble = bandAverage(normalizedSpectrum, sampleRate, fftSize, 25, 140);
   const hum = Math.max(
     bandAverage(normalizedSpectrum, sampleRate, fftSize, 48, 62),
-    bandAverage(normalizedSpectrum, sampleRate, fftSize, 58, 72)
+    bandAverage(normalizedSpectrum, sampleRate, fftSize, 58, 72),
   );
-  const buzz = bandAverage(normalizedSpectrum, sampleRate, fftSize, 7000, 12000);
-  const keyboard = bandAverage(normalizedSpectrum, sampleRate, fftSize, 1800, 6500) * clamp(flux * 4.2, 0, 1);
+  const buzz = bandAverage(
+    normalizedSpectrum,
+    sampleRate,
+    fftSize,
+    7000,
+    12000,
+  );
+  const keyboard =
+    bandAverage(normalizedSpectrum, sampleRate, fftSize, 1800, 6500) *
+    clamp(flux * 4.2, 0, 1);
   const slam = clamp((peak - rms) * 2.8 + flux * 2.6, 0, 1);
-  const chaos = clamp(flux * 2.2 + (peak - rms) * 1.3 + zcr * 3.6 + speech * 0.35, 0, 1);
+  const chaos = clamp(
+    flux * 2.2 + (peak - rms) * 1.3 + zcr * 3.6 + speech * 0.35,
+    0,
+    1,
+  );
 
   return {
     compactSpectrum,
@@ -1720,515 +1962,237 @@ function computeRoomFrameSummary() {
 
 // ─── Canvas / orb rendering ───────────────────────────────────────────────────
 
-function resizeCanvasToDisplay(canvas) {
-  if (!canvas) return;
-  const ratio = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  const width = Math.max(1, Math.round(rect.width * ratio));
-  const height = Math.max(1, Math.round(rect.height * ratio));
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width;
-    canvas.height = height;
-  }
-}
-
-function rotatePoint(point, yaw, pitch) {
-  const cosYaw = Math.cos(yaw);
-  const sinYaw = Math.sin(yaw);
-  const cosPitch = Math.cos(pitch);
-  const sinPitch = Math.sin(pitch);
-  const x1 = point.x * cosYaw - point.z * sinYaw;
-  const z1 = point.x * sinYaw + point.z * cosYaw;
-  const y2 = point.y * cosPitch - z1 * sinPitch;
-  const z2 = point.y * sinPitch + z1 * cosPitch;
-  return { x: x1, y: y2, z: z2 };
-}
-
-function buildOrbProfile(report, steps = 72) {
-  const spectrum = report.averageSpectrum || [];
-  const novelty = report.segmentation?.novelty || [];
-  const spectrumMax = Math.max(...spectrum, 1e-6);
-  const noveltyMax = Math.max(...novelty, 1e-6);
-  return Array.from({ length: steps }, (_, index) => {
-    const si = Math.floor((index / steps) * Math.max(spectrum.length - 1, 1));
-    const ni = Math.floor((index / steps) * Math.max(novelty.length - 1, 1));
-    return ((spectrum[si] || 0) / spectrumMax) * 0.72 + ((novelty[ni] || 0) / noveltyMax) * 0.28;
-  });
-}
-
 function buildLiveRenderReport() {
-  if (!liveState.isBuilding || !liveState.buildSpectrum || !liveState.buildMeta) return null;
+  if (!liveState.isBuilding || !liveState.buildSpectrum || !liveState.buildMeta)
+    return null;
   return {
-    id: "__building__",
     name: liveState.buildMeta.name,
     sample_rate_hz: liveState.buildMeta.sampleRate,
     averageSpectrum: liveState.buildSpectrum,
-    segmentation: { novelty: [] },
-    modulationBands: {
-      delta: 0,
-      theta: 0,
-      alpha: 0,
-      beta: 0,
-      gamma: 0,
-      dominant_modulation_hz: 0,
-    },
     features: [],
-    evidence: { scores: { attack_density: 0 } },
+    evidence: { scores: {} },
+    advanced: {},
+    modulationBands: {},
+    topPeaks: [],
   };
 }
 
 function drawGeometricOrb(canvas, report, view) {
-  if (!canvas || !report) return;
-  resizeCanvasToDisplay(canvas);
-  const ctx = canvas.getContext("2d");
-  const ratio = window.devicePixelRatio || 1;
-  const w = canvas.width / ratio;
-  const h = canvas.height / ratio;
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-
-  let spectrum = report.averageSpectrum || [];
-  let hzPerBin = report.sample_rate_hz / (2 * Math.max(spectrum.length - 1, 1));
-
-  // Live playback: read real-time FFT from AnalyserNode
-  if (liveState.isPlaying && liveState.playingReportId === report.id && liveState.analyser && liveState.liveFreqData) {
-    liveState.analyser.getFloatFrequencyData(liveState.liveFreqData);
-    // Convert dBFS → linear magnitude
-    spectrum = Array.from(liveState.liveFreqData, (db) => Math.pow(10, db / 20));
-    hzPerBin = audioContext.sampleRate / liveState.analyser.fftSize;
-  } else if (liveState.isBuilding && liveState.buildSpectrum) {
-    // Construction phase: show partially accumulated spectrum
-    spectrum = liveState.buildSpectrum;
-    hzPerBin = liveState.buildHzPerBin;
-  }
-
-  const novelty = report.segmentation?.novelty || [];
-  const specMax = Math.max(...spectrum, 1e-6);
-  const noveltyMax = Math.max(...novelty, 1e-6);
-  const metrics = summarizeReportMetrics(report);
-
-  const baseRadius = Math.min(w, h) * 0.25 * view.zoom;
-  const cx = w * 0.5;
-  const cy = h * 0.52;
-  const focal = baseRadius * 3.4;
-  const time = performance.now() * 0.001;
-  // Breathing speed and amplitude from actual modulation Hz
-  const breatheAmp = 0.018 + metrics.rmsMean * 0.04;
-  const breathe = 1 + Math.sin(time * (0.5 + metrics.modulationHz * 0.038)) * breatheAmp;
-
-  // ── Color entirely from real data ──────────────────────────────────────────
-  // Dominant band → base hue
-  const bandRGB = {
-    delta: [167, 139, 250],   // violet   — slow, deep
-    theta: [192, 100, 252],   // magenta  — dreamlike
-    alpha: [110, 231, 255],   // cyan     — meditative
-    beta:  [74,  222, 128],   // green    — alert
-    gamma: [255, 255, 200],   // bright   — intense
-  };
-  const dominantBand = getDominantBand(report);
-  const [br, bg, bb] = bandRGB[dominantBand] || bandRGB.alpha;
-
-  // Spectral centroid shifts color temperature (low=warm, high=cool)
-  const centroidNorm = clamp((metrics.centroidMean - 300) / 3700, 0, 1);
-  const cr = Math.round(lerp(br, 160, centroidNorm));
-  const cg = Math.round(lerp(bg, 230, centroidNorm));
-  const cb = Math.round(lerp(bb, 255, centroidNorm));
-
-  // Overall brightness from rms energy
-  const energyBright = clamp(0.3 + metrics.rmsMean * 5.5, 0.3, 1.0);
-
-  // Attack density controls surface sharpness via power curve
-  // low attack → smooth round sphere   high attack → sharp spiky peaks
-  const spikeExponent = 1.0 + (1.0 - clamp(metrics.attackDensity, 0, 1)) * 2.0;
-
-  const uSteps = 36;
-  const vSteps = 18;
-
-  // ── Build 3D vertices ──────────────────────────────────────────────────────
-  const verts = [];
-  for (let vi = 0; vi <= vSteps; vi++) {
-    const vt = vi / vSteps;
-    const phi = vt * Math.PI; // colatitude 0→π
-    for (let ui = 0; ui <= uSteps; ui++) {
-      const ut = ui / uSteps;
-      const theta = ut * 2 * Math.PI; // longitude 0→2π
-
-      // Map longitude → frequency bin (log scale 30Hz–18kHz)
-      const logMin = Math.log(30);
-      const logMax = Math.log(Math.min(report.sample_rate_hz / 2, 18000));
-      const freqHz = Math.exp(logMin + ut * (logMax - logMin));
-      const binIdx = clamp(Math.round(freqHz / hzPerBin), 0, spectrum.length - 1);
-      const specVal = (spectrum[binIdx] || 0) / specMax; // 0→1, real spectrum data
-
-      // Map latitude → structural novelty (variation over time)
-      const novIdx = Math.floor(vt * Math.max(novelty.length - 1, 0));
-      const novVal = novelty.length ? (novelty[novIdx] || 0) / noveltyMax : 0;
-
-      // Displacement = exactly the data, shaped by attack density
-      const rawDisp = specVal * 0.44 + novVal * 0.10;
-      const disp = Math.pow(clamp(rawDisp, 0, 1), spikeExponent);
-      const r = baseRadius * breathe * (1 + disp * 0.9);
-
-      // Spherical → Cartesian
-      const sinPhi = Math.sin(phi);
-      const x3 = r * sinPhi * Math.cos(theta);
-      const y3 = r * Math.cos(phi);
-      const z3 = r * sinPhi * Math.sin(theta);
-
-      const rot = rotatePoint({ x: x3, y: y3, z: z3 }, view.yaw, view.pitch);
-      const s = focal / Math.max(focal + rot.z, 0.01);
-
-      verts.push({
-        px: cx + rot.x * s,
-        py: cy + rot.y * s,
-        z: rot.z,
-        energy: specVal, // per-vertex spectral energy
-      });
-    }
-  }
-
-  // ── Build quads, depth-sort (painter's algorithm) ──────────────────────────
-  const stride = uSteps + 1;
-  const faces = [];
-  for (let vi = 0; vi < vSteps; vi++) {
-    for (let ui = 0; ui < uSteps; ui++) {
-      const i0 = vi * stride + ui;
-      const i1 = i0 + 1;
-      const i2 = i0 + stride;
-      const i3 = i2 + 1;
-      const avgZ = (verts[i0].z + verts[i1].z + verts[i2].z + verts[i3].z) * 0.25;
-      const avgE = (verts[i0].energy + verts[i1].energy + verts[i2].energy + verts[i3].energy) * 0.25;
-      faces.push({ i0, i1, i2, i3, z: avgZ, energy: avgE });
-    }
-  }
-  faces.sort((a, b) => a.z - b.z);
-
-  // ── Render ─────────────────────────────────────────────────────────────────
-  ctx.fillStyle = "rgba(5,8,22,0.92)";
-  ctx.fillRect(0, 0, w, h);
-
-  for (const f of faces) {
-    const a = verts[f.i0], b = verts[f.i1], c = verts[f.i2], d = verts[f.i3];
-    // depthFade: 0 = fully behind, 1 = fully in front
-    const depthFade = clamp((f.z / baseRadius + 1) * 0.5, 0, 1);
-    const fillA = (depthFade * f.energy * energyBright * 0.28).toFixed(3);
-    const edgeA = (depthFade * (0.06 + f.energy * 0.72) * energyBright).toFixed(3);
-
-    ctx.beginPath();
-    ctx.moveTo(a.px, a.py);
-    ctx.lineTo(b.px, b.py);
-    ctx.lineTo(d.px, d.py);
-    ctx.lineTo(c.px, c.py);
-    ctx.closePath();
-
-    ctx.fillStyle = `rgba(${cr},${cg},${cb},${fillA})`;
-    ctx.fill();
-    ctx.strokeStyle = `rgba(${cr},${cg},${cb},${edgeA})`;
-    ctx.lineWidth = 0.55;
-    ctx.stroke();
-  }
-
-  // ── Central glow — radius driven by energy ─────────────────────────────────
-  const glowR = baseRadius * (1.1 + metrics.rmsMean * 0.8);
-  const glow = ctx.createRadialGradient(cx, cy, baseRadius * 0.06, cx, cy, glowR);
-  glow.addColorStop(0, `rgba(${cr},${cg},${cb},${(0.2 * energyBright).toFixed(3)})`);
-  glow.addColorStop(0.4, `rgba(${cr},${cg},${cb},${(0.07 * energyBright).toFixed(3)})`);
-  glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function drawCollision(canvas, left, right, collision) {
-  if (!canvas) return;
-  resizeCanvasToDisplay(canvas);
-  const ctx = canvas.getContext("2d");
-  const ratio = window.devicePixelRatio || 1;
-  const w = canvas.width / ratio;
-  const h = canvas.height / ratio;
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "rgba(5, 11, 25, 0.92)";
-  ctx.fillRect(0, 0, w, h);
-
-  if (!left || !right || collision.score === null) {
-    ctx.fillStyle = "rgba(238, 244, 255, 0.72)";
-    ctx.font = '600 16px "Avenir Next", sans-serif';
-    ctx.fillText("Load two tracks to render the collision visual.", 24, h / 2);
-    return;
-  }
-
-  const harmony = collision.score / 100;
-  const time = performance.now() * 0.001;
-  const view = state.visuals.collision;
-  const spreadShift = Math.sin(view.yaw) * 18;
-  const leftX = w * (0.31 + Math.sin(time * 0.8) * 0.01) - spreadShift;
-  const rightX = w * (0.69 - Math.sin(time * 0.8) * 0.01) + spreadShift;
-  const centerY = h * 0.52;
-  const merge = harmony > 0.7 ? 0.24 : harmony > 0.45 ? 0.13 : 0.05;
-  const leftProfile = buildOrbProfile(left, 48);
-  const rightProfile = buildOrbProfile(right, 48);
-  const leftRadius = Math.min(w, h) * (0.16 + merge * 0.16) * view.zoom;
-  const rightRadius = Math.min(w, h) * (0.16 + merge * 0.16) * view.zoom;
-
-  const drawSimpleOrb = (cx, radius, profile, stroke, fill) => {
-    ctx.beginPath();
-    profile.forEach((lift, index) => {
-      const angle = (index / profile.length) * Math.PI * 2;
-      const r = radius * (1 + lift * 0.24 + Math.sin(time * 1.2 + angle * 3) * 0.02);
-      const x = cx + Math.cos(angle) * r;
-      const y = centerY + Math.sin(angle) * r * 0.88;
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.closePath();
-    ctx.fillStyle = fill;
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 1.5;
-    ctx.fill();
-    ctx.stroke();
-  };
-
-  drawSimpleOrb(leftX, leftRadius, leftProfile, "rgba(110, 231, 255, 0.9)", "rgba(110, 231, 255, 0.12)");
-  drawSimpleOrb(rightX, rightRadius, rightProfile, "rgba(255, 123, 156, 0.9)", "rgba(255, 123, 156, 0.12)");
-
-  if (harmony >= 0.74) {
-    const glow = ctx.createRadialGradient(w * 0.5, centerY, 10, w * 0.5, centerY, 100);
-    glow.addColorStop(0, "rgba(255, 211, 111, 0.5)");
-    glow.addColorStop(1, "rgba(255, 211, 111, 0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(w * 0.5, centerY, 110 + Math.sin(time * 2) * 8, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (harmony < 0.48) {
-    ctx.strokeStyle = "rgba(255, 95, 95, 0.75)";
-    ctx.lineWidth = 1.5;
-    for (let index = 0; index < 18; index += 1) {
-      const angle = (index / 18) * Math.PI * 2 + time * 0.8;
-      const start = 50;
-      const end = 90 + (index % 3) * 22;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.5 + Math.cos(angle) * start, centerY + Math.sin(angle) * start);
-      ctx.lineTo(w * 0.5 + Math.cos(angle) * end, centerY + Math.sin(angle) * end);
-      ctx.stroke();
-    }
-  }
+  drawFingerprint(canvas, report, {
+    ...ui.settings,
+    activity: visualActivity,
+    liveBands: visualBands,
+    building: liveState.isBuilding,
+    progress: liveState.buildProgress,
+  });
 }
 
 function drawRoomHeatmap(canvas) {
-  if (!canvas) return;
-  resizeCanvasToDisplay(canvas);
+  if (!canvas || !canvas.getClientRects().length) return;
+  const rect = canvas.getBoundingClientRect(),
+    ratio = Math.min(devicePixelRatio || 1, 2);
+  const w = rect.width,
+    h = rect.height;
+  if (
+    canvas.width !== Math.round(w * ratio) ||
+    canvas.height !== Math.round(h * ratio)
+  ) {
+    canvas.width = Math.round(w * ratio);
+    canvas.height = Math.round(h * ratio);
+  }
   const ctx = canvas.getContext("2d");
-  const ratio = window.devicePixelRatio || 1;
-  const w = canvas.width / ratio;
-  const h = canvas.height / ratio;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "rgba(5, 11, 25, 0.96)";
+  ctx.fillStyle = "#15181e";
   ctx.fillRect(0, 0, w, h);
-
-  const frames = roomState.heatmapFrames;
+  const left = 46,
+    top = 40,
+    bottom = h - 30,
+    width = w - left - 14,
+    height = bottom - top;
+  const frames = roomState.heatmapFrames,
+    nyquist = (roomState.sampleRate || audioContext.sampleRate) / 2;
+  const colors = Array.from({ length: 101 }, (_, i) => {
+    const t = i / 100;
+    return `rgb(${Math.round(22 + 190 * t * t)},${Math.round(28 + 184 * t * t)},${Math.round(38 + 160 * t)})`;
+  });
+  const step = width / 180;
+  frames.forEach((f, x) =>
+    f.forEach((v, y) => {
+      ctx.fillStyle = colors[Math.round(clamp(v, 0, 1) * 100)];
+      ctx.fillRect(
+        left + (180 - frames.length + x) * step,
+        top + height - ((y + 1) / f.length) * height,
+        step + 0.4,
+        height / f.length + 0.4,
+      );
+    }),
+  );
+  ctx.font = "10px -apple-system, sans-serif";
+  ctx.textBaseline = "middle";
+  for (const hz of [1000, 5000, 10000, 20000].filter((h) => h < nyquist)) {
+    const y = bottom - (hz / nyquist) * height;
+    ctx.fillStyle = "#929da9";
+    ctx.fillText(hz >= 1000 ? hz / 1000 + "k Hz" : hz + " Hz", 4, y);
+    ctx.strokeStyle = "#ffffff0c";
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(w - 14, y);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#a6b0ba";
+  ctx.fillText(
+    roomState.isScanning
+      ? "Listening live"
+      : frames.length
+        ? "Scan paused"
+        : "Microphone off",
+    left,
+    18,
+  );
+  ctx.fillText("18 seconds ago", left, h - 12);
+  ctx.textAlign = "right";
+  ctx.fillText("Now", w - 14, h - 12);
+  ctx.textAlign = "left";
   if (!frames.length) {
-    ctx.fillStyle = "rgba(238, 244, 255, 0.72)";
-    ctx.font = '600 16px "Avenir Next", sans-serif';
-    ctx.fillText("Start Room Scan to render the live spectrum heat view.", 22, h / 2);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#bec5cf";
+    ctx.fillText("Start a scan to see the sound around you.", w / 2, h / 2);
+    ctx.textAlign = "left";
     return;
   }
-
-  const columns = Math.min(frames.length, 160);
-  const rows = frames[0].length;
-  const columnWidth = w / columns;
-  const rowHeight = h / rows;
-
-  for (let x = 0; x < columns; x += 1) {
-    const frame = frames[frames.length - columns + x];
-    for (let y = 0; y < rows; y += 1) {
-      const intensity = clamp(frame[y], 0, 1);
-      const hue = lerp(210, 12, intensity);
-      const lightness = lerp(8, 64, intensity);
-      ctx.fillStyle = `hsl(${hue} 90% ${lightness}%)`;
-      ctx.fillRect(x * columnWidth, h - (y + 1) * rowHeight, columnWidth + 1, rowHeight + 1);
-    }
-  }
+  const latest = frames[frames.length - 1];
+  ctx.strokeStyle = "#beced9";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  latest.forEach((v, i) => {
+    const x = left + (i / (latest.length - 1)) * width,
+      y = 32 - v * 22;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+  ctx.strokeStyle = "#d2dccb";
+  ctx.beginPath();
+  ctx.moveTo(w - 14, top);
+  ctx.lineTo(w - 14, bottom);
+  ctx.stroke();
 }
 
 function refreshRoomSummary() {
-  roomState.summary = buildRoomSummary(roomState.rollingFrames, roomState.spots);
+  roomState.summary = buildRoomSummary(
+    roomState.rollingFrames,
+    roomState.spots,
+  );
 }
 
 function updateRoomScanFrame() {
   if (!roomState.isScanning || !roomState.analyser) return;
+  const now = performance.now();
+  if (now - roomState.lastSampleAt < 100) return;
+  roomState.lastSampleAt = now;
   const frame = computeRoomFrameSummary();
   if (!frame) return;
   roomState.heatmapFrames.push(frame.compactSpectrum);
-  roomState.heatmapFrames = roomState.heatmapFrames.slice(-180);
   roomState.rollingFrames.push(frame);
-  roomState.rollingFrames = roomState.rollingFrames.slice(-180);
+  if (roomState.heatmapFrames.length > 180) roomState.heatmapFrames.shift();
+  if (roomState.rollingFrames.length > 180) roomState.rollingFrames.shift();
   refreshRoomSummary();
-
-  const now = Date.now();
-  if (now - roomState.lastUiRefreshAt > 700) {
+  if (now - roomState.lastUiRefreshAt > 500) {
     roomState.lastUiRefreshAt = now;
-    renderAll();
+    updateRoomUI();
   }
 }
 
-function bindInteractiveCanvas(canvas, viewKey) {
-  if (!canvas || canvas.dataset.bound === "true") return;
-  canvas.dataset.bound = "true";
-  const view = state.visuals[viewKey];
-  const beginDrag = (x, y) => {
-    view.dragging = true;
-    view.lastX = x;
-    view.lastY = y;
-  };
-  const updateDrag = (x, y) => {
-    const dx = x - view.lastX;
-    const dy = y - view.lastY;
-    view.yaw += dx * 0.01;
-    view.pitch = clamp(view.pitch + dy * 0.008, -1.15, 1.15);
-    view.lastX = x;
-    view.lastY = y;
-  };
-  const stopDrag = () => {
-    view.dragging = false;
-  };
-
-  canvas.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    beginDrag(event.clientX, event.clientY);
-    canvas.setPointerCapture?.(event.pointerId);
-  });
-  canvas.addEventListener("pointermove", (event) => {
-    if (!view.dragging) return;
-    event.preventDefault();
-    updateDrag(event.clientX, event.clientY);
-  });
-  canvas.addEventListener("pointerup", stopDrag);
-  canvas.addEventListener("pointerleave", stopDrag);
-  canvas.addEventListener("pointercancel", stopDrag);
-  canvas.addEventListener("lostpointercapture", stopDrag);
-  canvas.addEventListener("wheel", (event) => {
-    event.preventDefault();
-    view.zoom = clamp(view.zoom - event.deltaY * 0.0012, 0.72, 1.8);
-  }, { passive: false });
-
-  // Touch fallback for browsers that still route canvas gestures through
-  // touch events instead of stable pointer events.
-  canvas.addEventListener("touchstart", (event) => {
-    const touch = event.touches[0];
-    if (!touch) return;
-    event.preventDefault();
-    beginDrag(touch.clientX, touch.clientY);
-  }, { passive: false });
-  canvas.addEventListener("touchmove", (event) => {
-    if (!view.dragging) return;
-    const touch = event.touches[0];
-    if (!touch) return;
-    event.preventDefault();
-    updateDrag(touch.clientX, touch.clientY);
-  }, { passive: false });
-  canvas.addEventListener("touchend", stopDrag, { passive: true });
-  canvas.addEventListener("touchcancel", stopDrag, { passive: true });
-}
-
-function drawIdleOrb(canvas) {
-  if (!canvas) return;
-  resizeCanvasToDisplay(canvas);
-  const ctx = canvas.getContext("2d");
-  const ratio = window.devicePixelRatio || 1;
-  const w = canvas.width / ratio;
-  const h = canvas.height / ratio;
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-
-  const time = performance.now() * 0.001;
-  const cx = w * 0.5;
-  const cy = h * 0.52;
-  const baseR = Math.min(w, h) * 0.22;
-  const breathe = 1 + Math.sin(time * 0.6) * 0.03;
-  const steps = 72;
-
-  ctx.fillStyle = "rgba(5, 8, 22, 0.86)";
-  ctx.fillRect(0, 0, w, h);
-
-  const rings = 6;
-  for (let ring = 0; ring < rings; ring += 1) {
-    const latNorm = ring / (rings - 1);
-    const lat = (latNorm - 0.5) * Math.PI * 0.88;
-    const rs = Math.cos(lat);
-    const vert = Math.sin(lat);
-    ctx.beginPath();
-    for (let i = 0; i <= steps; i += 1) {
-      const angle = (i / steps) * Math.PI * 2;
-      const wave = 0.04 * Math.sin(angle * 4 + time * 0.8) + 0.02 * Math.sin(angle * 7 - time * 0.5);
-      const r = baseR * breathe * (1 + wave);
-      const x = cx + Math.cos(angle) * rs * r;
-      const y = cy + vert * r + Math.sin(angle) * rs * r * 0.06;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    const alpha = 0.1 + latNorm * 0.14;
-    ctx.strokeStyle = `rgba(110,231,255,${alpha.toFixed(2)})`;
-    ctx.lineWidth = 1 + latNorm * 0.6;
-    ctx.stroke();
-  }
-
-  const glow = ctx.createRadialGradient(cx, cy, baseR * 0.1, cx, cy, baseR * 1.2);
-  glow.addColorStop(0, "rgba(167,139,250,0.18)");
-  glow.addColorStop(0.4, "rgba(110,231,255,0.12)");
-  glow.addColorStop(1, "rgba(110,231,255,0)");
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(cx, cy, baseR * 1.18, 0, Math.PI * 2);
-  ctx.fill();
-}
-
+let visualActivity = [0, 0, 0];
+let visualBands = null;
+let visualLoopStarted = false;
+let animationId = 0;
 function renderFeatureVisuals() {
   updateRoomScanFrame();
-  const primary = getSelectedTrack();
-  const [left, right] = getComparisonPair();
-  const building = buildLiveRenderReport();
-  const heroOrb = document.querySelector("#hero-orb");
-  const artifactCanvas = document.querySelector("#artifact-canvas");
-  const collisionCanvas = document.querySelector("#collision-canvas");
-  const roomHeatmapCanvas = document.querySelector("#room-heatmap");
-
-  if (heroOrb) {
-    bindInteractiveCanvas(heroOrb, "artifact");
-    if (building) {
-      drawGeometricOrb(heroOrb, building, state.visuals.artifact);
-    } else if (primary) {
-      drawGeometricOrb(heroOrb, primary, state.visuals.artifact);
-    } else {
-      drawIdleOrb(heroOrb);
+  const primary = getSelectedTrack(),
+    [left, right] = getComparisonPair();
+  if (liveState.isPlaying && liveState.analyser && liveState.timeData) {
+    liveState.analyser.getFloatTimeDomainData(liveState.timeData);
+    let sum = 0,
+      peak = 0;
+    for (const v of liveState.timeData) {
+      sum += v * v;
+      peak = Math.max(peak, Math.abs(v));
     }
+    const rms = Math.sqrt(sum / liveState.timeData.length);
+    visualActivity = [clamp(rms * 3, 0, 1), clamp((peak - rms) * 2, 0, 1), 0];
+    liveState.analyser.getFloatFrequencyData(liveState.liveFreqData);
+    const powers = [0, 0, 0],
+      step = audioContext.sampleRate / liveState.analyser.fftSize;
+    liveState.liveFreqData.forEach((db, i) => {
+      if (i * step <= 16000)
+        powers[i * step < 250 ? 0 : i * step < 4000 ? 1 : 2] += 10 ** (db / 10);
+    });
+    const total = powers.reduce((a, b) => a + b, 0) || 1;
+    visualBands = powers.map((v) => Math.sqrt(v / total));
+  } else {
+    visualActivity = [0, 0, 0];
+    visualBands = null;
   }
-  if (artifactCanvas && primary) {
-    bindInteractiveCanvas(artifactCanvas, "artifact");
-    drawGeometricOrb(artifactCanvas, primary, state.visuals.artifact);
+  const options = {
+    ...ui.settings,
+    activity: visualActivity,
+    liveBands: visualBands,
+  };
+  if (ui.route === "now") {
+    drawGeometricOrb(
+      document.querySelector("#hero-orb"),
+      buildLiveRenderReport() || primary,
+    );
+    drawPlayer(playbackPosition());
   }
-  if (collisionCanvas) {
-    bindInteractiveCanvas(collisionCanvas, "collision");
-    drawCollision(collisionCanvas, left, right, buildCollisionRead(left, right));
+  if (ui.route === "compare") {
+    drawFingerprint(document.querySelector("#compare-left"), left, {
+      ...options,
+      liveBands: liveState.playingReportId === left?.id ? visualBands : null,
+      activity:
+        liveState.playingReportId === left?.id ? visualActivity : [0, 0, 0],
+    });
+    drawFingerprint(document.querySelector("#compare-right"), right, {
+      ...options,
+      liveBands: liveState.playingReportId === right?.id ? visualBands : null,
+      activity:
+        liveState.playingReportId === right?.id ? visualActivity : [0, 0, 0],
+    });
   }
-  if (roomHeatmapCanvas) {
-    drawRoomHeatmap(roomHeatmapCanvas);
-  }
+  if (ui.route === "collision" && left && right)
+    drawFingerprint(document.querySelector("#collision-canvas"), left, {
+      ...options,
+      right,
+      similarity: buildCollisionRead(left, right).score,
+    });
+  if (ui.route === "room")
+    drawRoomHeatmap(document.querySelector("#room-heatmap"));
 }
-
-let visualLoopStarted = false;
-
 function startVisualLoop() {
   if (visualLoopStarted) return;
   visualLoopStarted = true;
-  const tick = () => {
-    renderFeatureVisuals();
-    window.requestAnimationFrame(tick);
+  let last = 0,
+    reported = false;
+  const tick = (now) => {
+    if (now - last >= 1000 / 30 && !document.hidden) {
+      last = now;
+      try {
+        renderFeatureVisuals();
+        reported = false;
+      } catch (error) {
+        if (!reported) {
+          console.error("Visual rendering failed", error);
+          setStatus(
+            "The visualization is unavailable. Your analysis is still accessible.",
+          );
+          reported = true;
+        }
+      }
+    }
+    animationId = requestAnimationFrame(tick);
   };
-  window.requestAnimationFrame(tick);
+  animationId = requestAnimationFrame(tick);
 }
 
 // ─── State helpers ────────────────────────────────────────────────────────────
@@ -2271,17 +2235,23 @@ function syncSelectionDefaults() {
     state.comparison.rightId = null;
     return;
   }
-  if (!baseReports.some((report) => report.id === state.comparison.leftId)) state.comparison.leftId = baseReports[0].id;
+  if (!baseReports.some((report) => report.id === state.comparison.leftId))
+    state.comparison.leftId = baseReports[0].id;
   if (!baseReports.some((report) => report.id === state.comparison.rightId)) {
     state.comparison.rightId = baseReports[1]?.id || baseReports[0].id;
   }
-  if (baseReports.length > 1 && state.comparison.leftId === state.comparison.rightId) {
-    state.comparison.rightId = baseReports.find((report) => report.id !== state.comparison.leftId)?.id || baseReports[1].id;
+  if (
+    baseReports.length > 1 &&
+    state.comparison.leftId === state.comparison.rightId
+  ) {
+    state.comparison.rightId =
+      baseReports.find((report) => report.id !== state.comparison.leftId)?.id ||
+      baseReports[1].id;
   }
 }
 
 function setSelectedTrack(id) {
-  if (liveState.isPlaying && liveState.playingReportId !== id) {
+  if (state.selectedTrackId !== id) {
     stopPlayback();
   }
   state.selectedTrackId = id;
@@ -2299,559 +2269,262 @@ function setComparisonTrack(side, id) {
 }
 
 async function startRoomScan() {
+  if (roomState.isScanning || roomState.pending) return;
+  const availability = getRoomScanAvailability();
+  if (!availability.supported) {
+    roomState.error = availability.reason;
+    updateRoomUI();
+    return;
+  }
+  roomState.pending = true;
+  roomState.error = null;
+  const requestId = ++roomState.requestId;
+  updateRoomUI();
+  let stream;
   try {
-    const availability = getRoomScanAvailability();
-    if (!availability.supported) {
-      roomState.error = availability.reason;
-      refreshRoomSummary();
-      renderAll();
-      setStatus(availability.reason);
-      return;
-    }
     await audioContext.resume();
-    if (roomState.isScanning) return;
-
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
       },
     });
-
-    const analyser = audioContext.createAnalyser();
+    if (requestId !== roomState.requestId) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    const source = audioContext.createMediaStreamSource(stream),
+      analyser = audioContext.createAnalyser();
     analyser.fftSize = roomState.fftSize;
-    analyser.smoothingTimeConstant = 0.5;
-    const sourceNode = audioContext.createMediaStreamSource(stream);
-    sourceNode.connect(analyser);
-
-    roomState.stream = stream;
-    roomState.sourceNode = sourceNode;
-    roomState.analyser = analyser;
-    roomState.freqData = new Float32Array(analyser.frequencyBinCount);
-    roomState.timeData = new Float32Array(analyser.fftSize);
-    roomState.previousSpectrum = null;
-    roomState.heatmapFrames = [];
-    roomState.rollingFrames = [];
-    roomState.error = null;
-    roomState.sampleRate = audioContext.sampleRate;
-    roomState.isScanning = true;
-    roomState.lastUiRefreshAt = 0;
+    analyser.smoothingTimeConstant = 0.7;
+    source.connect(analyser);
+    Object.assign(roomState, {
+      stream,
+      sourceNode: source,
+      analyser,
+      freqData: new Float32Array(analyser.frequencyBinCount),
+      timeData: new Float32Array(analyser.fftSize),
+      previousSpectrum: null,
+      heatmapFrames: [],
+      rollingFrames: [],
+      events: [],
+      frameCounter: 0,
+      error: null,
+      sampleRate: audioContext.sampleRate,
+      isScanning: true,
+      lastUiRefreshAt: 0,
+      lastSampleAt: 0,
+    });
+    stream.getTracks().forEach((track) =>
+      track.addEventListener("ended", () => {
+        if (roomState.stream === stream) stopRoomScan();
+      }),
+    );
     refreshRoomSummary();
-    renderAll();
-    setStatus("Room scan live. Walk around and mark spots to compare seats.");
   } catch (error) {
-    roomState.error = error.message || "Microphone access was blocked.";
-    refreshRoomSummary();
-    roomState.isScanning = false;
-    renderAll();
-    setStatus(`Room scan unavailable: ${roomState.error}`);
+    stream?.getTracks().forEach((t) => t.stop());
+    if (requestId === roomState.requestId)
+      roomState.error =
+        error.name === "NotAllowedError"
+          ? "Microphone access was denied. Allow microphone access in your browser's site settings, then try again."
+          : error.name === "NotFoundError"
+            ? "No microphone was found. Connect a microphone and try again."
+            : "The microphone could not start. Check whether another app is using it, then try again.";
+  } finally {
+    if (requestId === roomState.requestId) {
+      roomState.pending = false;
+      updateRoomUI();
+    }
   }
 }
-
 function stopRoomScan() {
+  roomState.requestId++;
+  roomState.pending = false;
   roomState.sourceNode?.disconnect();
   roomState.analyser?.disconnect();
-  roomState.stream?.getTracks().forEach((track) => track.stop());
-  roomState.isScanning = false;
-  roomState.stream = null;
-  roomState.sourceNode = null;
-  roomState.analyser = null;
-  roomState.freqData = null;
-  roomState.timeData = null;
-  roomState.previousSpectrum = null;
-  roomState.lastUiRefreshAt = 0;
+  roomState.stream?.getTracks().forEach((t) => t.stop());
+  Object.assign(roomState, {
+    isScanning: false,
+    stream: null,
+    sourceNode: null,
+    analyser: null,
+    freqData: null,
+    timeData: null,
+    previousSpectrum: null,
+  });
   refreshRoomSummary();
-  renderAll();
-  setStatus("Room scan stopped.");
+  updateRoomUI();
+  exportButton.disabled =
+    !getAllReports().length && !roomState.rollingFrames.length;
 }
-
 function markRoomSpot() {
-  if (!roomState.summary || !roomState.isScanning) return;
-  const label = `Spot ${roomState.spots.length + 1}`;
+  if (!roomState.isScanning || !roomState.rollingFrames.length) return;
+  const input = document.querySelector("#spot-label");
+  const label =
+    input?.value.trim().slice(0, 40) || `Spot ${roomState.spots.length + 1}`;
   roomState.spots.push({
     label,
     focusFit: roomState.summary.focusFit,
     chaosScore: roomState.summary.chaosScore,
     speechScore: roomState.summary.speechScore,
+    marked_at: new Date().toISOString(),
   });
   roomState.spots = roomState.spots.slice(-6);
+  if (input) input.value = "";
   refreshRoomSummary();
-  renderAll();
-  setStatus(`${label} saved for seat comparison.`);
+  updateRoomUI();
 }
 
 // ─── Dashboard rendering ─────────────────────────────────────────────────────
 
-function renderTrackCards(reports) {
-  const primary = reports.length ? getSelectedTrack() || reports[0] : null;
-  const baseReports = reports.filter((report) => !report.isDerived);
-  const coach = primary ? buildStudySoundCoach(primary) : null;
-  const cleanser = buildPlaylistCleanser(reports);
-  const room = roomState.summary || buildRoomSummary([], roomState.spots);
-  const trackSummary = primary ? buildHumanReadout(primary) : null;
-  const roomAvailability = getRoomScanAvailability();
-  const roomStatus = roomState.error ? `Mic error: ${roomState.error}` : roomState.isScanning ? room.status : "Mic idle";
-  const stateScore = primary ? buildStateEngineering(primary) : null;
-  const energy = primary ? buildEnergyRead(primary) : null;
-  const [left, right] = getComparisonPair();
-  const comparison = buildCompareRead(left, right);
-  const collision = buildCollisionRead(left, right);
-
-  trackResults.innerHTML = `
-    <section class="dashboard-shell">
-      <div class="dashboard-toolbar">
-        <div class="track-switcher">
-          ${
-            reports.length
-              ? reports
-                  .map(
-                    (report) => `
-                      <button
-                        class="track-chip ${report.id === primary.id ? "active" : ""}"
-                        type="button"
-                        data-action="focus-track"
-                        data-track-id="${report.id}"
-                      >
-                        ${escapeHtml(report.name)}
-                      </button>
-                    `
-                  )
-                  .join("")
-              : `<button class="track-chip active" type="button" disabled>No tracks loaded</button>`
-          }
-        </div>
-        <div class="app-summary">
-          <div class="toolbar-copy">
-            <p>${
-              primary
-                ? `${escapeHtml(primary.name)} is active. It reads ${escapeHtml(trackSummary.vibe.toLowerCase())}, carries ${escapeHtml(withIndefiniteArticle(energy.label.toLowerCase()))} energy profile, is strongest for ${escapeHtml(coach.tasks[0].label.toLowerCase())}, and estimates ${(primary.advanced?.estimated_key || "an ambiguous key field")} ${(primary.advanced?.estimated_scale || "")}`.trim() + `.`
-                : "Upload a song or playlist to generate task-specific study guidance. Room Scan works independently if you want to profile a space first."
-            }</p>
-          </div>
-          <div class="micro-stat-row">
-            <div class="micro-stat">
-              <div class="micro-stat-label">Active Track</div>
-              <div class="micro-stat-value">${primary ? escapeHtml(primary.name) : "Waiting"}</div>
-            </div>
-            <div class="micro-stat">
-              <div class="micro-stat-label">Room Scan</div>
-              <div class="micro-stat-value">${escapeHtml(roomStatus)}</div>
-            </div>
-            <div class="micro-stat">
-              <div class="micro-stat-label">Playlist</div>
-              <div class="micro-stat-value">${reports.length ? `${reports.length} track${reports.length === 1 ? "" : "s"}` : "No tracks"}</div>
-            </div>
-          </div>
-        </div>
-        ${
-          baseReports.length > 1
-            ? `
-              <div class="compare-picker-shell">
-                <div class="compare-picker">
-                  <div class="compare-picker-label">Compare Left</div>
-                  <div class="compare-track-row">
-                    ${baseReports
-                      .map(
-                        (report) => `
-                          <button
-                            class="track-chip ${left?.id === report.id ? "active" : ""}"
-                            type="button"
-                            data-action="set-compare-left"
-                            data-track-id="${report.id}"
-                          >
-                            ${escapeHtml(report.name)}
-                          </button>
-                        `
-                      )
-                      .join("")}
-                  </div>
-                </div>
-                <div class="compare-picker">
-                  <div class="compare-picker-label">Compare Right</div>
-                  <div class="compare-track-row">
-                    ${baseReports
-                      .map(
-                        (report) => `
-                          <button
-                            class="track-chip ${right?.id === report.id ? "active" : ""}"
-                            type="button"
-                            data-action="set-compare-right"
-                            data-track-id="${report.id}"
-                          >
-                            ${escapeHtml(report.name)}
-                          </button>
-                        `
-                      )
-                      .join("")}
-                  </div>
-                </div>
-              </div>
-            `
-            : ""
-        }
-      </div>
-
-      <section class="dashboard-section">
-        <p class="dashboard-kicker dashboard-section-title">Core Features</p>
-        <div class="dashboard-grid">
-          <article class="feature-card">
-            <p class="dashboard-kicker">00 • Orb</p>
-            <h3>${primary ? `${escapeHtml(primary.name)} artifact orb` : "Upload a track to activate the orb."}</h3>
-            <p class="feature-subtitle">${primary ? `The hero orb is reading the real spectrum, novelty, attack density, modulation, MFCC recurrence, and harmonic key field from ${escapeHtml(primary.name)}.` : "The liquid-glass orb becomes the live visual artifact once a track is analyzed."}</p>
-            <p class="artifact-note">${primary ? `Drag to rotate. Scroll to zoom. Breathing speed follows ${primary.modulationBands.dominant_modulation_hz.toFixed(2)} Hz modulation. Recurrence affinity is ${(primary.advanced?.recurrence_mean_affinity || 0).toFixed(3)}, and the harmonic center leans ${(primary.advanced?.estimated_key || "ambiguous")} ${(primary.advanced?.estimated_scale || "")}.` : "The orb remains interactive as the main visual surface above this dashboard."}</p>
-          </article>
-
-          <article class="feature-card">
-            <p class="dashboard-kicker">01 • State</p>
-            <h3>${primary ? escapeHtml(stateScore.verdict) : "Upload a track to score state."}</h3>
-            <p class="feature-subtitle">${primary ? escapeHtml(stateScore.guidance) : "Dreamscape maps measured roughness, repetition, phase stability, and energy into focus, hype, and chill scores."}</p>
-            ${
-              primary
-                ? `
-                  <div class="score-grid">
-                    ${stateScore.entries
-                      .map(
-                        (entry) => `
-                          <div class="score-block">
-                            <div class="score-label">${escapeHtml(entry.label)}</div>
-                            <div class="score-value">${entry.score}%</div>
-                            <div class="score-bar"><div class="score-fill" style="width:${entry.score}%"></div></div>
-                          </div>
-                        `
-                      )
-                      .join("")}
-                  </div>
-                  <p class="score-note">Derived from RMS energy, attack density, spectral roughness, phase stability, and modulation behavior.</p>
-                `
-                : ""
-            }
-          </article>
-
-          <article class="feature-card">
-            <p class="dashboard-kicker">02 • Energy</p>
-            <h3>${primary ? escapeHtml(energy.label) : "Upload a track to read energy."}</h3>
-            <p class="feature-subtitle">${primary ? escapeHtml(energy.copy) : "Pressure, shock, and peak lift are computed from the uploaded waveform, not placeholder labels."}</p>
-            ${
-              primary
-                ? `
-                  <div class="energy-stack">
-                    <span class="tone-badge">${escapeHtml(energy.label)} profile</span>
-                    <div class="energy-grid">
-                      <div class="energy-block">
-                        <div class="compare-label">Energy</div>
-                        <div class="energy-value">${energy.energyScore}%</div>
-                        <p class="energy-note">Overall pressure from average loudness, peak lift, and transient density.</p>
-                      </div>
-                      <div class="energy-block">
-                        <div class="compare-label">Shock</div>
-                        <div class="energy-value">${energy.shockScore}%</div>
-                        <p class="energy-note">How sharply the track jumps when peaks and attacks arrive.</p>
-                      </div>
-                      <div class="energy-block">
-                        <div class="compare-label">Peak</div>
-                        <div class="energy-value">${energy.peakEnergy.toFixed(3)}</div>
-                        <p class="energy-note">95th percentile RMS window from the analyzed waveform.</p>
-                      </div>
-                    </div>
-                  </div>
-                `
-                : ""
-            }
-          </article>
-
-          <article class="feature-card">
-            <p class="dashboard-kicker">03 • Compare</p>
-            <h3>${escapeHtml(comparison.title)}</h3>
-            <p class="feature-subtitle">${escapeHtml(comparison.summary)}</p>
-            <div class="compare-grid-simple">
-              ${
-                comparison.stats.length
-                  ? comparison.stats
-                      .map(
-                        (stat) => `
-                          <div class="compare-block">
-                            <div class="compare-label">${escapeHtml(stat.label)}</div>
-                            <div class="compare-value">${escapeHtml(stat.value)}</div>
-                            <p class="compare-note">${escapeHtml(stat.note)}</p>
-                          </div>
-                        `
-                      )
-                      .join("")
-                  : `
-                      <div class="compare-block">
-                        <div class="compare-label">Waiting</div>
-                        <div class="compare-value">2 tracks</div>
-                        <p class="compare-note">Upload a second track to unlock side-by-side comparison.</p>
-                      </div>
-                    `
-              }
-            </div>
-          </article>
-
-          <article class="feature-card">
-            <p class="dashboard-kicker">04 • Collision</p>
-            <h3>${escapeHtml(collision.label)}${collision.score !== null ? ` • ${collision.score}%` : ""}</h3>
-            <p class="feature-subtitle">${escapeHtml(collision.summary)}</p>
-            <canvas id="collision-canvas" class="collision-canvas"></canvas>
-            <p class="collision-note">Experimental. Driven by measured differences in centroid, modulation pace, phase stability, repetition lock, and dominant peak placement.</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="dashboard-section">
-        <p class="dashboard-kicker dashboard-section-title">Side Features</p>
-        <div class="dashboard-grid">
-          <article class="feature-card">
-            <p class="dashboard-kicker">05 • Study Sound Coach</p>
-            <h3>${primary ? escapeHtml(coach.headline) : "Upload a track to score task fit."}</h3>
-            <p class="feature-subtitle">${primary ? escapeHtml(coach.summary) : "Dreamscape maps measured loudness, attack pressure, repetition, texture, and modulation into reading, writing, coding, memorization, and recovery guidance."}</p>
-            ${
-              primary
-                ? `
-                  <p class="feature-lead">${escapeHtml(primary.name)} is most useful for <strong>${escapeHtml(coach.tasks[0].label.toLowerCase())}</strong> and least useful for <strong>${escapeHtml(coach.tasks[coach.tasks.length - 1].label.toLowerCase())}</strong>.</p>
-                  <div class="coach-task-grid">
-                    ${coach.tasks
-                      .map(
-                        (task) => `
-                          <div class="coach-task">
-                            <div class="coach-task-head">
-                              <div class="coach-task-label">${escapeHtml(task.label)}</div>
-                              <div class="coach-task-score">${task.score}%</div>
-                            </div>
-                            <div class="score-bar"><div class="score-fill" style="width:${task.score}%"></div></div>
-                            <p class="coach-task-note">${escapeHtml(task.note)}</p>
-                          </div>
-                        `
-                      )
-                      .join("")}
-                  </div>
-                  <div class="cleanser-banner">
-                    <strong>Why it reads this way</strong>
-                    <p>Measured flags: ${coach.cautionFlags.map((flag) => escapeHtml(flag)).join(" · ")}. These come from the uploaded audio, not canned mood labels.</p>
-                  </div>
-                `
-                : ""
-            }
-          </article>
-
-          <article class="feature-card">
-            <p class="dashboard-kicker">06 • Room Scan</p>
-            <h3>${escapeHtml(roomState.error ? "Room Scan unavailable here." : room.roomTone)}</h3>
-            <p class="feature-subtitle">${escapeHtml(roomState.error || room.interruptions)}</p>
-            <div class="room-actions">
-              <button class="btn-secondary" type="button" data-action="start-room-scan" ${roomState.isScanning || !roomAvailability.supported ? "disabled" : ""}>Start Room Scan</button>
-              <button class="btn-secondary" type="button" data-action="stop-room-scan" ${roomState.isScanning ? "" : "disabled"}>Stop Scan</button>
-              <button class="btn-secondary" type="button" data-action="mark-room-spot" ${roomState.isScanning ? "" : "disabled"}>Mark Current Spot</button>
-            </div>
-            ${
-              roomState.error || !roomAvailability.supported
-                ? `
-                  <div class="cleanser-banner">
-                    <strong>Mic Access Required</strong>
-                    <p>${escapeHtml(roomState.error || roomAvailability.reason)}</p>
-                  </div>
-                `
-                : ""
-            }
-            <canvas id="room-heatmap" class="heatmap-canvas"></canvas>
-            <div class="room-grid">
-              <div class="room-metric">
-                <div class="room-metric-label">Focus Fit</div>
-                <div class="room-metric-value">${room.focusFit}%</div>
-                <div class="room-metric-copy">How usable this room is for sustained study right now.</div>
-              </div>
-              <div class="room-metric">
-                <div class="room-metric-label">Chaos</div>
-                <div class="room-metric-value">${room.chaosScore}%</div>
-                <div class="room-metric-copy">Irregular spikes, chatter-like motion, and unstable bursts.</div>
-              </div>
-              <div class="room-metric">
-                <div class="room-metric-label">Speech</div>
-                <div class="room-metric-value">${room.speechScore}%</div>
-                <div class="room-metric-copy">Voice-range activity that can hijack your language system.</div>
-              </div>
-              <div class="room-metric">
-                <div class="room-metric-label">Rumble</div>
-                <div class="room-metric-value">${room.rumbleScore}%</div>
-                <div class="room-metric-copy">Low-end hum and room vibration that wears on focus over time.</div>
-              </div>
-            </div>
-            <ul class="noise-list">
-              ${room.hiddenNoises.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
-            </ul>
-            <div class="seat-callout">
-              <strong>Best Seat Finder</strong>
-              <p>${escapeHtml(room.bestSeat)}</p>
-            </div>
-          </article>
-
-          <article class="feature-card">
-            <p class="dashboard-kicker">07 • Playlist Cleanser</p>
-            <h3>${escapeHtml(cleanser.headline)}</h3>
-            <p class="feature-subtitle">${escapeHtml(cleanser.summary)}</p>
-            <div class="cleanser-grid">
-              ${
-                cleanser.tracks.length
-                  ? cleanser.tracks
-                      .map(
-                        (item) => `
-                          <div class="cleanser-item">
-                            <div class="cleanser-head">
-                              <div class="cleanser-track">${escapeHtml(item.name)}</div>
-                              <div class="cleanser-score">${item.support}%</div>
-                            </div>
-                            <p class="cleanser-note">${escapeHtml(item.note)}</p>
-                            <div class="cleanser-tags">
-                              ${item.tags.map((tag) => `<span class="cleanser-tag ${escapeHtml(tag.tone)}">${escapeHtml(tag.label)}</span>`).join("")}
-                            </div>
-                          </div>
-                        `
-                      )
-                      .join("")
-                  : `
-                      <div class="cleanser-item">
-                        <div class="cleanser-head">
-                          <div class="cleanser-track">Waiting for playlist</div>
-                          <div class="cleanser-score">--</div>
-                        </div>
-                        <p class="cleanser-note">Load a playlist and Dreamscape will flag the tracks that are too explosive, jagged, or distractingly unstable for study.</p>
-                      </div>
-                    `
-              }
-            </div>
-            ${
-              cleanser.safest && cleanser.riskiest
-                ? `
-                  <div class="cleanser-banner">
-                    <strong>Quick Verdict</strong>
-                    <p>Keep <strong>${escapeHtml(cleanser.safest.name)}</strong> in the study loop. Consider cutting or saving <strong>${escapeHtml(cleanser.riskiest.name)}</strong> for workouts, walking, or recovery instead of deep work.</p>
-                  </div>
-                `
-                : ""
-            }
-          </article>
-        </div>
-      </section>
-    </section>
-  `;
-
-  renderFeatureVisuals();
-}
-
 function renderAll() {
   syncSelectionDefaults();
-  exportButton.disabled = !getAllReports().length;
-  renderTrackCards(getAllReports());
+  exportButton.disabled =
+    !getAllReports().length && !roomState.rollingFrames.length;
+  renderExperience();
   const primary = getSelectedTrack();
-  if (orbLabel) {
-    orbLabel.textContent = liveState.isBuilding && liveState.buildMeta
-      ? `Constructing ${liveState.buildMeta.name} · ${Math.round(liveState.buildProgress * 100)}%`
-      : primary
-        ? `${primary.name} · ${primary.modulationBands.dominant_modulation_hz.toFixed(2)} Hz modulation`
-        : "Upload a track to activate";
-  }
+  if (orbLabel)
+    orbLabel.textContent =
+      liveState.isBuilding && liveState.buildMeta
+        ? `Mapping ${liveState.buildMeta.name} · ${Math.round(liveState.buildProgress * 100)}%`
+        : primary
+          ? `${timeLabel(primary.duration_s)} · ${primary.channels === 1 ? "Mono" : "Stereo"} · ${(primary.sample_rate_hz / 1000).toFixed(1)} kHz · Analyzed on your device`
+          : "Choose a track to reveal its audio fingerprint.";
   updatePlayBtn();
 }
 
-// ─── Live playback ────────────────────────────────────────────────────────────
-
+function playbackPosition() {
+  const r = getSelectedTrack();
+  if (!r) return 0;
+  const p =
+    liveState.offset +
+    (liveState.isPlaying ? audioContext.currentTime - liveState.startedAt : 0);
+  return liveState.loop ? p % r.duration_s : Math.min(p, r.duration_s);
+}
 function updatePlayBtn() {
   if (!orbPlayBtn) return;
-  const primary = getSelectedTrack();
-  orbPlayBtn.hidden = !primary;
-  orbPlayBtn.disabled = !primary || liveState.isBuilding;
-  orbPlayBtn.textContent = liveState.isPlaying ? "⏸ Pause" : "▶ Play";
+  orbPlayBtn.disabled = !getSelectedTrack() || analysisBusy;
+  orbPlayBtn.textContent = liveState.isPlaying ? "Ⅱ" : "▶";
+  orbPlayBtn.setAttribute("aria-label", liveState.isPlaying ? "Pause" : "Play");
 }
-
-function stopPlayback() {
-  try { liveState.sourceNode?.stop(); } catch (_) {}
+function stopPlayback(reset = true) {
+  const position = playbackPosition();
+  if (liveState.sourceNode) liveState.sourceNode.onended = null;
+  try {
+    liveState.sourceNode?.stop();
+  } catch {}
   liveState.sourceNode?.disconnect();
   liveState.analyser?.disconnect();
-  liveState.isPlaying = false;
-  liveState.playingReportId = null;
-  liveState.sourceNode = null;
-  liveState.analyser = null;
-  liveState.liveFreqData = null;
+  liveState.gain?.disconnect();
+  Object.assign(liveState, {
+    isPlaying: false,
+    playingReportId: null,
+    sourceNode: null,
+    analyser: null,
+    gain: null,
+    liveFreqData: null,
+    timeData: null,
+    offset: reset ? 0 : position,
+  });
   updatePlayBtn();
 }
-
 async function startPlayback(report) {
-  stopPlayback();
+  if (!report) return;
   const buffer = liveState.audioBuffers.get(report.id);
-  if (!buffer) return;
-  await audioContext.resume();
-
-  const analyser = audioContext.createAnalyser();
-  analyser.fftSize = 2048;
-  analyser.smoothingTimeConstant = 0.8;
-
-  const source = audioContext.createBufferSource();
-  source.buffer = buffer;
-  source.connect(analyser);
-  analyser.connect(audioContext.destination);
-  source.start(0);
-
-  liveState.analyser = analyser;
-  liveState.liveFreqData = new Float32Array(analyser.frequencyBinCount);
-  liveState.sourceNode = source;
-  liveState.isPlaying = true;
-  liveState.playingReportId = report.id;
-  source.onended = stopPlayback;
-  updatePlayBtn();
+  if (!buffer) {
+    setStatus("Audio is unavailable. Add this file again to listen.");
+    return;
+  }
+  try {
+    await audioContext.resume();
+    if (getSelectedTrack()?.id !== report.id) return;
+    stopPlayback(false);
+    if (liveState.offset >= buffer.duration - 0.01) liveState.offset = 0;
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.8;
+    const source = audioContext.createBufferSource(),
+      gain = audioContext.createGain();
+    source.buffer = buffer;
+    source.loop = liveState.loop;
+    gain.gain.value = liveState.volume;
+    source.connect(analyser);
+    analyser.connect(gain);
+    gain.connect(audioContext.destination);
+    liveState.startedAt = audioContext.currentTime;
+    Object.assign(liveState, {
+      analyser,
+      gain,
+      sourceNode: source,
+      isPlaying: true,
+      playingReportId: report.id,
+      liveFreqData: new Float32Array(analyser.frequencyBinCount),
+      timeData: new Float32Array(analyser.fftSize),
+    });
+    source.onended = () => {
+      if (liveState.sourceNode === source) {
+        stopPlayback();
+      }
+    };
+    source.start(0, liveState.offset);
+    updatePlayBtn();
+  } catch (error) {
+    stopPlayback(false);
+    setStatus("Playback could not start. Try pressing Play again.");
+  }
 }
-
 function togglePlayback() {
-  const primary = getSelectedTrack();
-  if (!primary) return;
-  if (liveState.isPlaying && liveState.playingReportId === primary.id) stopPlayback();
-  else startPlayback(primary);
+  if (liveState.isPlaying) stopPlayback(false);
+  else startPlayback(getSelectedTrack());
+}
+function seekPlayback(value) {
+  const r = getSelectedTrack();
+  if (!r) return;
+  const playing = liveState.isPlaying;
+  stopPlayback();
+  liveState.offset = clamp(Number(value) || 0, 0, r.duration_s);
+  if (playing) startPlayback(r);
 }
 
 // ─── Audio file pipeline ──────────────────────────────────────────────────────
 
 const audioContext = new AudioContext();
 
-function encodeWavBlob(signal, sampleRate) {
-  const dataLength = signal.length * 2;
-  const buffer = new ArrayBuffer(44 + dataLength);
-  const view = new DataView(buffer);
-  let offset = 0;
-  const writeString = (value) => {
-    for (let index = 0; index < value.length; index += 1) {
-      view.setUint8(offset + index, value.charCodeAt(index));
-    }
-    offset += value.length;
-  };
-  writeString("RIFF");
-  view.setUint32(offset, 36 + dataLength, true); offset += 4;
-  writeString("WAVE");
-  writeString("fmt ");
-  view.setUint32(offset, 16, true); offset += 4;
-  view.setUint16(offset, 1, true); offset += 2;
-  view.setUint16(offset, 1, true); offset += 2;
-  view.setUint32(offset, sampleRate, true); offset += 4;
-  view.setUint32(offset, sampleRate * 2, true); offset += 4;
-  view.setUint16(offset, 2, true); offset += 2;
-  view.setUint16(offset, 16, true); offset += 2;
-  writeString("data");
-  view.setUint32(offset, dataLength, true); offset += 4;
-  for (let index = 0; index < signal.length; index += 1) {
-    const sample = clamp(signal[index], -1, 1);
-    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-    offset += 2;
-  }
-  return new Blob([buffer], { type: "audio/wav" });
-}
-
-async function buildReportFromSignal({ name, mono, sampleRate, channels, audioUrl }, onProgress) {
-  const frameReport = await analyzeFrames(mono, sampleRate, state.config, onProgress);
+async function buildReportFromSignal(
+  { name, mono, sampleRate, channels, audioUrl },
+  onProgress,
+) {
+  const frameReport = await analyzeFrames(
+    mono,
+    sampleRate,
+    state.config,
+    onProgress,
+  );
   const modulation = modulationAnalysis(mono, sampleRate, state.config);
   const embeddings = computeEmbeddings(frameReport.features);
-  const segmentation = detectSegments(embeddings, frameReport.features, state.config);
-  const symbolic = buildStructuralCodebook(frameReport.features, embeddings, modulation.bands, state.config);
-  const evidence = buildEvidenceModel(frameReport.features, modulation.bands, symbolic, segmentation);
-  const advanced = computeAdvancedBrowserAnalysis(mono, sampleRate, state.config);
+  const segmentation = detectSegments(
+    embeddings,
+    frameReport.features,
+    state.config,
+  );
+  const symbolic = buildStructuralCodebook(
+    frameReport.features,
+    embeddings,
+    modulation.bands,
+    state.config,
+  );
+  const evidence = buildEvidenceModel(
+    frameReport.features,
+    modulation.bands,
+    symbolic,
+    segmentation,
+  );
+  const advanced = await computeAdvancedBrowserAnalysis(
+    mono,
+    sampleRate,
+    state.config,
+  );
 
   return {
     id: `${slugify(name)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -2868,7 +2541,6 @@ async function buildReportFromSignal({ name, mono, sampleRate, channels, audioUr
     evidence,
     advanced,
     segmentation,
-    correlations: [],
     averageSpectrum: Array.from(frameReport.averageSpectrum),
     spectrumFreqs: frameReport.spectrumFreqs,
     audio_url: audioUrl,
@@ -2882,6 +2554,8 @@ async function decodeFile(file) {
 
 async function analyzeFile(file) {
   const buffer = await decodeFile(file);
+  if (!buffer.length || !buffer.duration)
+    throw new Error("This file has no decodable audio.");
   const mono = downmix(buffer);
   const audioUrl = URL.createObjectURL(file);
 
@@ -2898,15 +2572,41 @@ async function analyzeFile(file) {
   let report = null;
   try {
     report = await buildReportFromSignal(
-      { name: file.name, mono, sampleRate: buffer.sampleRate, channels: buffer.numberOfChannels, audioUrl },
+      {
+        name: file.name,
+        mono,
+        sampleRate: buffer.sampleRate,
+        channels: buffer.numberOfChannels,
+        audioUrl,
+      },
       (partialSpectrum, progress) => {
         liveState.buildSpectrum = partialSpectrum;
         liveState.buildProgress = progress;
         if (orbLabel) {
           orbLabel.textContent = `Constructing ${file.name} · ${Math.round(progress * 100)}%`;
         }
-      }
+      },
     );
+    report.analyzed_at = new Date().toISOString();
+    report.waveform = Array.from({ length: 256 }, (_, i) => {
+      let peak = 0;
+      const start = Math.floor((i * mono.length) / 256),
+        end = Math.floor(((i + 1) * mono.length) / 256);
+      for (let j = start; j < end; j++)
+        peak = Math.max(peak, Math.abs(mono[j]));
+      return peak;
+    });
+    if (buffer.numberOfChannels > 1) {
+      const left = buffer.getChannelData(0),
+        right = buffer.getChannelData(1);
+      let side = 0,
+        total = 0;
+      for (let i = 0; i < left.length; i++) {
+        side += (left[i] - right[i]) ** 2;
+        total += left[i] ** 2 + right[i] ** 2;
+      }
+      report.stereo_width = clamp(side / Math.max(total * 2, 1e-12), 0, 1);
+    } else report.stereo_width = 0;
     liveState.audioBuffers.set(report.id, buffer);
     return report;
   } catch (error) {
@@ -2928,7 +2628,8 @@ async function loadSelectedFiles() {
 
 function cleanupReportUrls(reports) {
   for (const report of reports) {
-    if (report?.audio_url?.startsWith("blob:")) URL.revokeObjectURL(report.audio_url);
+    if (report?.audio_url?.startsWith("blob:"))
+      URL.revokeObjectURL(report.audio_url);
   }
 }
 
@@ -2944,6 +2645,7 @@ function formatBytes(bytes) {
 }
 
 function renderFileList(files) {
+  analyzeButton.disabled = analysisBusy || !files?.length;
   if (!fileList) return;
   if (!files || !files.length) {
     fileList.innerHTML = "";
@@ -2957,7 +2659,7 @@ function renderFileList(files) {
           <div class="file-chip-name">${escapeHtml(file.name)}</div>
           <div class="file-chip-size">${formatBytes(file.size)}</div>
         </div>
-      `
+      `,
     )
     .join("");
 }
@@ -2965,77 +2667,124 @@ function renderFileList(files) {
 // ─── Export ───────────────────────────────────────────────────────────────────
 
 function serializeReport(report) {
+  const { audio_url, energy_curve, ...data } = report;
   return {
-    id: report.id,
-    name: report.name,
-    duration_s: report.duration_s,
-    sample_rate_hz: report.sample_rate_hz,
-    channels: report.channels,
-    modulationBands: report.modulationBands,
-    topPeaks: report.topPeaks,
-    symbolic: report.symbolic,
-    evidence: report.evidence,
-    advanced: report.advanced,
-    segmentation: report.segmentation,
+    ...data,
+    state: buildStateEngineering(report),
+    energy: buildEnergyRead(report),
     study_sound_coach: buildStudySoundCoach(report),
   };
 }
-
 function exportResults() {
-  const payload = {
-    created_at: new Date().toISOString(),
-    config: state.config,
-    reports: getAllReports().map(serializeReport),
-    playlist_cleanser: buildPlaylistCleanser(getAllReports()),
-    room_scan: {
-      summary: roomState.summary,
-      spots: roomState.spots,
-    },
-    guardrails: [
-      "This export contains acoustic heuristics and correlations, not proof of hidden language or neural transmission.",
-    ],
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "quantum-sound-lab-session.json";
-  anchor.click();
-  URL.revokeObjectURL(url);
+  if (!getAllReports().length && !roomState.rollingFrames.length) {
+    setStatus("Analyze a sound or scan a room before exporting.");
+    return;
+  }
+  try {
+    const [left, right] = getComparisonPair();
+    const payload = {
+      schema_version: 2,
+      created_at: new Date().toISOString(),
+      config: state.config,
+      active_track_id: getSelectedTrack()?.id || null,
+      reports: getAllReports().map(serializeReport),
+      comparison:
+        left && right
+          ? {
+              left_id: left.id,
+              right_id: right.id,
+              readout: buildCompareRead(left, right),
+              collision: buildCollisionRead(left, right),
+            }
+          : null,
+      playlist_cleanser: buildPlaylistCleanser(getAllReports()),
+      room_scan:
+        roomState.rollingFrames.length || roomState.spots.length
+          ? {
+              summary: roomState.summary,
+              spots: roomState.spots,
+              task_fit: roomState.rollingFrames.length
+                ? buildRoomScanAdvice(roomState.summary)
+                : null,
+            }
+          : null,
+      interpretation:
+        "State, task-fit and similarity scores are acoustic heuristics; they do not measure cognitive or physiological effects.",
+    };
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json",
+      }),
+    );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "dreamscape-analysis.json";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    ui.exports.unshift(new Date().toLocaleString());
+    setStatus("Analysis JSON downloaded.");
+    if (ui.route === "exports") renderExperience();
+  } catch (error) {
+    setStatus("The export could not be created. Please try again.");
+  }
 }
 
-// ─── Analysis entrypoint ──────────────────────────────────────────────────────
-
+let analysisBusy = false;
 async function runAnalysis() {
+  if (analysisBusy) return;
+  const files = await loadSelectedFiles();
+  if (!files.length) {
+    setStatus("Choose one or more audio files first.");
+    return;
+  }
+  if (
+    files.some(
+      (file) => !file.size || !/\.(mp3|wav|m4a|ogg|aac)$/i.test(file.name),
+    )
+  ) {
+    setStatus(
+      "Choose supported audio: MP3, WAV, M4A, OGG or AAC. Empty files cannot be analyzed.",
+    );
+    return;
+  }
+  analysisBusy = true;
+  analyzeButton.disabled = true;
+  audioInput.disabled = true;
+  const reports = [];
   try {
-    setStatus("Preparing files...");
-    await audioContext.resume();
     stopPlayback();
-    liveState.audioBuffers.clear();
-
-    const files = await loadSelectedFiles();
-    if (!files.length) {
-      setStatus("No uploaded audio detected. Add one or two files to generate the dashboard.");
-      return;
-    }
-
-    setStatus(`Decoding ${files.length} track(s)...`);
-    const reports = [];
     for (const file of files) {
-      setStatus(`Analyzing ${file.name}...`);
+      setStatus(`Mapping sound: ${file.name}`);
       reports.push(await analyzeFile(file));
     }
-
-    cleanupReportUrls(state.reports);
-    cleanupReportUrls(state.derivedReports);
-    state.derivedReports = [];
-    state.reports = reports;
-    syncSelectionDefaults();
-    renderAll();
-    setStatus(`Analysis complete for ${reports.length} track(s).`);
+    state.reports.push(...reports);
+    state.selectedTrackId = reports[0].id;
+    ui.history.unshift(
+      ...reports.map((r) => ({
+        id: r.id,
+        name: r.name,
+        date: r.analyzed_at,
+        duration: r.duration_s,
+      })),
+    );
+    audioInput.value = "";
+    renderFileList([]);
+    setStatus(
+      `Analysis complete for ${reports.length} sound${reports.length === 1 ? "" : "s"}.`,
+    );
   } catch (error) {
-    console.error(error);
-    setStatus(`Analysis failed: ${error.message}`);
+    cleanupReportUrls(reports);
+    reports.forEach((r) => liveState.audioBuffers.delete(r.id));
+    setStatus(
+      "This audio could not be analyzed. Try another file or convert it to WAV or MP3. Your previous analyses are still available.",
+    );
+  } finally {
+    analysisBusy = false;
+    audioInput.disabled = false;
+    analyzeButton.disabled = !audioInput.files?.length;
+    renderAll();
   }
 }
 
@@ -3051,19 +2800,31 @@ audioInput.addEventListener("change", () => {
 
 if (dropZone) {
   const body = document.body;
-  body.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
-  body.addEventListener("dragleave", (e) => { if (!e.relatedTarget) dropZone.classList.remove("drag-over"); });
+  body.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("drag-over");
+  });
+  body.addEventListener("dragleave", (e) => {
+    if (!e.relatedTarget) dropZone.classList.remove("drag-over");
+  });
   body.addEventListener("drop", (e) => {
     e.preventDefault();
     dropZone.classList.remove("drag-over");
+    if (analysisBusy) return;
     const files = e.dataTransfer?.files;
     if (!files?.length) return;
     const dt = new DataTransfer();
-    [...files].filter((f) => /\.(mp3|wav|m4a|ogg|aac)$/i.test(f.name)).forEach((f) => dt.items.add(f));
+    [...files]
+      .filter((f) => /\.(mp3|wav|m4a|ogg|aac)$/i.test(f.name))
+      .forEach((f) => dt.items.add(f));
     if (dt.files.length) {
       audioInput.files = dt.files;
       renderFileList(dt.files);
-    }
+      location.hash = "now";
+    } else
+      setStatus(
+        "That file type is not supported. Choose MP3, WAV, M4A, OGG or AAC.",
+      );
   });
 }
 
@@ -3088,5 +2849,53 @@ trackResults.addEventListener("click", (event) => {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 refreshRoomSummary();
-renderTrackCards([]);
+mountExperience({
+  reports: getAllReports,
+  active: getSelectedTrack,
+  pair: getComparisonPair,
+  select: setSelectedTrack,
+  selectPair: setComparisonTrack,
+  metrics: summarizeReportMetrics,
+  stateScore: buildStateEngineering,
+  energy: buildEnergyRead,
+  coach: buildStudySoundCoach,
+  collision: buildCollisionRead,
+  cleanser: buildPlaylistCleanser,
+  room: roomState,
+  roomAdvice: buildRoomScanAdvice,
+  roomAvailability: getRoomScanAvailability,
+  live: liveState,
+  export: exportResults,
+});
+document
+  .querySelector("#seek")
+  .addEventListener("input", (e) => seekPlayback(e.target.value));
+document
+  .querySelector("#restart-button")
+  .addEventListener("click", () => seekPlayback(0));
+document.querySelector("#volume").addEventListener("input", (e) => {
+  liveState.volume = Number(e.target.value);
+  if (liveState.gain)
+    liveState.gain.gain.setTargetAtTime(
+      liveState.volume,
+      audioContext.currentTime,
+      0.03,
+    );
+});
+document.querySelector("#loop-button").addEventListener("click", (e) => {
+  liveState.loop = !liveState.loop;
+  if (liveState.sourceNode) liveState.sourceNode.loop = liveState.loop;
+  e.currentTarget.setAttribute("aria-pressed", String(liveState.loop));
+});
+window.addEventListener("pagehide", () => {
+  stopPlayback();
+  stopRoomScan();
+  cancelAnimationFrame(animationId);
+  visualLoopStarted = false;
+  disposeDetachedOrbs(true);
+  audioContext.suspend();
+});
+window.addEventListener("pageshow", () => startVisualLoop());
+refreshRoomSummary();
+renderAll();
 startVisualLoop();

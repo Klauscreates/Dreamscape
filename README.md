@@ -1,174 +1,102 @@
 # Dreamscape
 
-Dreamscape is a browser-first sound analysis app for understanding what audio is doing to focus, energy, and environment.
+### Every sound has a shape.
 
-The main product is the deployed web app. Upload a song, playlist tracks, or scan a room with the microphone, and Dreamscape turns measured audio structure into a visual and human-readable dashboard.
+**Browser-local analysis | Interactive WebGL | Mobile-first | No API keys**
 
-## What the app does
+[Features](#eight-features) · [Architecture](#architecture) · [Verification](docs/QA.md) · [Contributing](CONTRIBUTING.md)
 
-Dreamscape analyzes sound in the browser and surfaces eight product features:
+<img src="docs/assets/dreamscape-desktop.png" alt="Dreamscape with its audio-derived orb, waveform player and State and Energy views" width="820">
 
-- `Orb`: an interactive liquid-glass sound orb built from the uploaded track's real spectrum, novelty, modulation, recurrence, and harmonic profile
-- `State`: a focus / hype / chill style read based on measured attack density, modulation behavior, loudness, and spectral structure
-- `Energy`: a pressure and intensity read based on RMS, peaks, dynamic lift, and transient density
-- `Compare`: a side-by-side comparison of two tracks across brightness, attack pressure, recurrence, and harmonic alignment
-- `Collision`: a compatibility / clash read that estimates how well two sonic signatures merge
-- `Study Sound Coach`: task-fit guidance for reading, writing, coding, memorization, and recovery
-- `Room Scan`: live microphone scanning for calm vs chaos, interruption pressure, hidden noise patterns, and focus fit
-- `Playlist Cleanser`: identifies tracks in a loaded set that are most likely to help or break concentration
+*Actual application capture, not a mockup.*
 
-## Browser-side analysis stack
+Every sound has a shape. Dreamscape analyzes audio in your browser, builds an interactive spatial fingerprint, and helps you explore music and room acoustics.
 
-The deployed app performs real analysis in the browser. It is not just a static UI.
+## Run
 
-Browser-side analyzers include:
+Use Python 3 to serve the project:
 
-- waveform decoding with Web Audio
-- frame-level spectral features
-- modulation-band analysis
-- structural segmentation
-- transient / attack analysis
-- browser-native MFCC summaries
-- chroma analysis
-- HPCP-style harmonic profiles
-- recurrence affinity summaries
-- browser-side key / scale estimation
-- room spectrum heatmap rendering
-- optional EEG / EMF CSV correlation
-
-These analyzers are implemented in [app.js](/Users/nikolaistoloff/Downloads/dreamscape/app.js).
-
-## Primary product surface
-
-The app is designed to run as a public web app.
-
-### Deploy on Vercel
-
-```bash
-npx vercel
+```sh
+python3 -m http.server 8000 --bind 127.0.0.1
 ```
 
-Production deploy:
+Open http://127.0.0.1:8000. Microphone capture needs localhost or HTTPS. No JavaScript build, package installation, account, or API key is needed for the browser product.
 
-```bash
-npx vercel --prod
-```
+## Eight features
 
-The repo includes:
+- **Orb:** deterministic geometric audio fingerprint with a layered WebGL material, smoothed live response, drag/pinch/keyboard controls, reset and fullscreen.
+- **State:** estimated focus, hype and chill profiles, with acoustic measurements available on demand.
+- **Energy:** intensity and impact estimates, measured RMS statistics and a real energy curve.
+- **Compare:** select any two session tracks; compare their brightness, attacks, repetition, recurrence and estimated tonal centers.
+- **Collision:** an experimental spatial visualization of sound-signature similarity. It does not estimate interpersonal compatibility.
+- **Study Sound Coach:** estimated fit for reading, writing, coding, memorization and recovery.
+- **Room Scan:** live microphone spectrum and heatmap, activity estimates, named locations and relative location comparison.
+- **Playlist Cleanser:** estimated support/disruption for a set of uploaded tracks, with the underlying measurements.
 
-- [vercel.json](/Users/nikolaistoloff/Downloads/dreamscape/vercel.json)
-- [.vercelignore](/Users/nikolaistoloff/Downloads/dreamscape/.vercelignore)
+The custom player supports play/pause, seek, restart, volume and loop. Waveforms come from decoded audio. MP3, WAV, M4A, OGG and AAC support depends on the browser's decoder.
 
-Why Vercel fits this app:
+Library, history, audio and analysis are **session-only**. Appearance and motion preferences are saved locally. Export → Analysis JSON downloads the reports, measurements, interpreted scores, selected comparison, room summary and marked locations. Export also works after a room-only scan.
 
-- static deployment is enough for the main product
-- browser-side analyzers run on the user's machine
-- HTTPS allows `Room Scan` microphone access in normal browsers
+## Architecture
 
-## Local preview
+- `index.html`: accessible application shell and player.
+- `styles.css`: responsive system typography, graphite/light materials, sidebar and mobile navigation.
+- `app.js`: existing audio analysis, microphone lifecycle, playback, session state and export.
+- `experience.js`: navigation, feature views, empty states, preferences and waveform drawing.
+- `orb.js`: dependency-free WebGL mesh, shader material, deterministic fingerprint and camera controls.
 
-For local preview, start the lightweight server:
+There is no Astra UI dependency; Astra refers to the model used during development.
 
-```bash
-python3 lab_server.py
-```
+The browser analyzer calculates frame spectra, RMS, zero crossings, attacks, modulation, structural segmentation, symbolic repetition, MFCC summaries, chroma, an HPCP-style profile, approximate CQT-style bands, recurrence and tonal estimates. The CQT-style profile is a frequency-bucket approximation, not librosa's CQT transform. Stereo width for the orb is measured from left/right difference energy.
 
-Then open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+The orb uses a 6,305-vertex spherical topology with a continuous audio-derived radial field. Frequency balance, repetition, tonal strength, brightness, duration and measured stereo width establish its baseline. Live waveform energy, peaks and frequency balance animate it with damping. Lighting and color are visual mappings. GPU resources are released when views leave the document. Rendering is capped at 30 fps and skipped for hidden/offscreen canvases; reduced-motion and lower-resolution options are available.
 
-`lab_server.py` is only a tiny local preview server. It is not a second product surface.
+## Interpretation boundaries
 
-## Optional heavier Python path
+The measurements describe audio. State, task fit, interruption and similarity scores are rules-based estimates; they are not measured cognitive, physiological or medical effects. Voice-range activity also includes instruments and other sounds. Microphone levels are device-relative, not calibrated sound-pressure levels. Compare room locations using the same device and setup.
 
-The only major capability outside the deployed browser app is the heavier batch-analysis path in [sound_analyzer.py](/Users/nikolaistoloff/Downloads/dreamscape/sound_analyzer.py).
+The current browser product has no Spotify connection, EEG/EMF upload, QRNG panel or cloud library.
 
-Use it when you want:
+## Deploy
 
-- local offline analysis runs
-- heavier Python-side feature extraction
-- native EEG file loading
-- artifact export from the Python pipeline
+The application is static and can be deployed on Vercel. The supplied `vercel.json` allows same-origin microphone access and revalidates unversioned JavaScript/CSS to avoid stale deployments. Local recordings, Python tools, snapshots and generated outputs are excluded by `.vercelignore`.
 
-### Set up the repo-local Python environment
+## Optional Python analysis
 
-```bash
+`sound_analyzer.py` is a separate local batch tool, not called by the web app. It uses librosa and mne, with optional Essentia.
+
+```sh
 ./bootstrap_python_env.sh
 source .venv/bin/activate
+python sound_analyzer.py "path/to/audio.mp3" --out-dir analysis_output
 ```
 
-Core Python dependencies:
+Install `requirements-essentia.txt` for its optional key/HPCP/rhythm extras. Native EEG and CSV correlation remain capabilities of the Python tool. The legacy local server API is not used by the browser product.
 
-- [requirements.txt](/Users/nikolaistoloff/Downloads/dreamscape/requirements.txt)
+## Verification
 
-Optional Essentia layer:
-
-```bash
-python -m pip install -r requirements-essentia.txt
+```sh
+node --check app.js
+node --check experience.js
+node --check orb.js
+python3 smoke_check.py
+node tests/analysis-smoke.mjs
 ```
 
-Without Essentia, the Python analyzer still runs, but some rhythm-confidence, key, and HPCP extras are reduced.
+Or run all local checks with `sh scripts/check.sh`.
 
-### Example Python run
+The smoke check checks static contracts; it is not a substitute for browser interaction tests. See [the verification report](docs/QA.md) for tested flows and limitations.
 
-```bash
-python sound_analyzer.py "path/to/your-track.mp3" --out-dir analysis_output_smoke
-```
+## Repository guide
 
-## Python analysis stack
+| Location | Purpose |
+| --- | --- |
+| Root HTML, CSS and JavaScript | Static browser product; no build step |
+| `docs/` | Dated verification evidence and UI capture |
+| `tests/` | Repeatable deterministic audio-analysis tests |
+| `scripts/` | Developer check commands |
+| Root Python tools | Optional local server and batch analysis |
+| `.github/` | Contributor issue templates |
 
-The optional Python analyzer uses:
-
-- `librosa` for STFT, onset strength, tempo, MFCC, chroma CQT, CQT, and recurrence
-- optional `Essentia` for beat tracking, rhythm confidence, key estimation, and HPCP pitch-class summaries
-- `mne` for native EEG loading from `.edf`, `.bdf`, `.fif`, `.set`, and `.vhdr`
-
-## EEG / EMF support
-
-The browser app can optionally correlate audio features against EEG or EMF CSV data.
-
-Example CSV:
-
-```csv
-time_s,eeg_fz,eeg_cz,theta_power
-0.00,12.2,8.1,0.42
-0.25,11.9,8.4,0.45
-0.50,12.7,8.0,0.43
-```
-
-Accepted time columns:
-
-- `time_s`
-- `time`
-- `timestamp`
-- `seconds`
-- `time_ms`
-
-The Python path can also read native EEG files:
-
-- `.edf`
-- `.bdf`
-- `.fif`
-- `.set`
-- `.vhdr`
-
-## Scientific guardrails
-
-- Dreamscape detects acoustic structure, measured variation, and statistical correlation. It does not decode hidden language or consciousness.
-- Matching an audio modulation band to a brainwave band label does not mean the audio has become a brainwave.
-- Compatibility, state, and study-fit outputs are evidence-backed interpretations built on measured audio features, not clinical truth claims.
-- Any EEG / EMF match should be treated as exploratory until validated with controlled experiments.
-
-## Repo contents
-
-This repository intentionally keeps only the files needed to run and judge the project:
-
-- [index.html](/Users/nikolaistoloff/Downloads/dreamscape/index.html): app shell
-- [styles.css](/Users/nikolaistoloff/Downloads/dreamscape/styles.css): liquid-glass UI and responsive layout
-- [app.js](/Users/nikolaistoloff/Downloads/dreamscape/app.js): browser-side analysis, visuals, room scan, compare, and export logic
-- [lab_server.py](/Users/nikolaistoloff/Downloads/dreamscape/lab_server.py): lightweight local preview server
-- [sound_analyzer.py](/Users/nikolaistoloff/Downloads/dreamscape/sound_analyzer.py): optional heavier Python batch-analysis path
-- [smoke_check.py](/Users/nikolaistoloff/Downloads/dreamscape/smoke_check.py): lightweight smoke check
-- [bootstrap_python_env.sh](/Users/nikolaistoloff/Downloads/dreamscape/bootstrap_python_env.sh): one-command repo-local venv bootstrap
-- [requirements.txt](/Users/nikolaistoloff/Downloads/dreamscape/requirements.txt): core Python dependency list
-- [requirements-essentia.txt](/Users/nikolaistoloff/Downloads/dreamscape/requirements-essentia.txt): optional Essentia dependency layer
-
-Local exports, caches, screenshots, temporary artifacts, and local MP3 assets are intentionally ignored so the repo stays focused on the runnable product.
+Bring your own audio. Recordings, generated analysis output, environment files,
+compiler caches and old UI snapshots stay local and are excluded from Git.
