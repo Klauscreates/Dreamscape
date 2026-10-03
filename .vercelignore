@@ -23,6 +23,9 @@ scripts
 .github
 *.mp3
 *.wav
+*.m4a
+*.ogg
+*.aac
 *.py
 *.sh
 requirements*.txt

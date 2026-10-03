@@ -1,5 +1,18 @@
 # Redesign verification
 
+## Installation and offline verification: October 2, 2026
+
+- Manifest validates with a standalone display, stable app identity and PNG icons at 192/512 pixels, plus a maskable icon and Apple touch icon.
+- Inspected the actual icon, launch image and mobile installation dialog. Tested the iPhone guide with a simulated iPhone user agent; physical iPhone installation and launch images still need device validation.
+- Downloaded the app shell in Chromium, disconnected the browser, reloaded, uploaded two real local MP3s, generated their analyses, compared their distinct IDs and exported both reports while offline. Playback and the five Study tasks also worked offline.
+- Inspected cache keys: only the 17 explicitly listed app assets were present. Recordings, reports and API routes bypass the cache.
+- Simulated a new worker release: the update banner appeared, the current analyzed track stayed intact while the update waited, explicit Update and reload activated the new worker, and the previous app cache was removed.
+- `tests/offline-smoke.mjs` checks failed precache rollback, user-triggered activation, old-cache cleanup, private/external request bypass and integrity-checked recovery of evicted files. An asset from a different release returns unavailable rather than entering the current cache.
+- Fresh browser testing reported no uncaught errors. Chromium's isolated test context reported installation blocked by private browsing; the regular browser session emitted a native installation event. Native app installation was not completed by automation.
+
+The older evidence below applies to the audio/UI redesign; installation is an
+additional layer and does not change the DSP calculations.
+
 Verified locally on September 25, 2026 using Chromium browser automation and
 the static app served at `http://127.0.0.1:8040/`. No deployment or push was made.
 

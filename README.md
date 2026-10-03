@@ -44,6 +44,8 @@ Library, history, audio and analysis are **session-only**. Appearance and motion
 - `app.js`: existing audio analysis, microphone lifecycle, playback, session state and export.
 - `experience.js`: navigation, feature views, empty states, preferences and waveform drawing.
 - `orb.js`: dependency-free WebGL mesh, shader material, deterministic fingerprint and camera controls.
+- `pwa.js`, `sw.js`, `manifest.webmanifest`: installation, verified offline app files and controlled updates.
+- `icons/`, `launch.svg`: Home Screen identity and launch appearance.
 
 There is no Astra UI dependency; Astra refers to the model used during development.
 
@@ -56,6 +58,32 @@ The orb uses a 6,305-vertex spherical topology with a continuous audio-derived r
 The measurements describe audio. State, task fit, interruption and similarity scores are rules-based estimates; they are not measured cognitive, physiological or medical effects. Voice-range activity also includes instruments and other sounds. Microphone levels are device-relative, not calibrated sound-pressure levels. Compare room locations using the same device and setup.
 
 The current browser product has no Spotify connection, EEG/EMF upload, QRNG panel or cloud library.
+
+## Install on your phone
+
+Open **https://dreamscapeapp.vercel.app/** in Safari on iPhone or iPad. Tap
+**Share → Add to Home Screen**, keep **Open as Web App** enabled when offered,
+then tap **Add**. Dreamscape opens from its own icon in a standalone window.
+The in-app **Install** guide includes these steps. Compatible desktop/Android
+browsers also offer a native install prompt.
+
+The first successful online visit downloads a verified offline copy of the app.
+After that, it can reopen offline and analyze audio already downloaded to your
+device. Cloud file providers still need connectivity. Recordings and reports are
+not stored in the offline cache; analyses remain session-only. Browser storage
+can be evicted, so offline availability is not guaranteed indefinitely.
+
+Updates download as a complete version and show **Update and reload**. Export
+session results first. To prepare a release after changing app assets, run:
+
+```sh
+node scripts/sync-offline-version.mjs
+sh scripts/check.sh
+```
+
+The worker verifies asset hashes, caches only listed app files, and keeps the
+current release active until the replacement is ready. iOS launch images cover
+five common portrait display sizes; other displays use platform launch behavior.
 
 ## Deploy
 
@@ -85,7 +113,9 @@ node tests/analysis-smoke.mjs
 
 Or run all local checks with `sh scripts/check.sh`.
 
-The smoke check checks static contracts; it is not a substitute for browser interaction tests. See [the verification report](docs/QA.md) for tested flows and limitations.
+The smoke checks cover static contracts, DSP and offline cache behavior; browser
+interaction tests are separate. See [the verification report](docs/QA.md) and
+[installation guide](docs/INSTALLATION.md) for tested flows and limitations.
 
 ## Repository guide
 

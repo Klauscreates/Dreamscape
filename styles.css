@@ -1192,3 +1192,55 @@ select {
 .text-button {
   min-height: 44px;
 }
+
+.install-dialog {
+  width: min(470px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  padding: 28px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  box-shadow: 0 24px 100px #0005;
+}
+.install-dialog::backdrop { background: #0007; backdrop-filter: blur(8px); }
+.dialog-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+.dialog-heading img { border-radius: 14px; }
+.install-dialog h2 { font-size: 30px; margin-bottom: 20px; }
+#install-instructions { color: var(--muted); font-size: 14px; line-height: 1.8; margin-bottom: 18px; }
+#install-instructions ol { padding-left: 22px; }
+#install-instructions li { margin-bottom: 10px; }
+.app-update {
+  position: fixed;
+  bottom: 26px;
+  right: 26px;
+  left: auto;
+  z-index: 70;
+  max-width: calc(100vw - 32px);
+  background: var(--glass);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 12px 50px #0004;
+  padding: 18px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+}
+.app-update p { font-size: 11px; margin-top: 4px; }
+@media (display-mode: standalone) {
+  .app-header { padding-top: env(safe-area-inset-top); height: calc(88px + env(safe-area-inset-top)); }
+  .sidebar { padding-top: calc(36px + env(safe-area-inset-top)); }
+}
+@media (max-width: 760px) {
+  .header-actions { gap: 8px; }
+  #connectivity-status { font-size: 10px; }
+  .app-update { left: 16px; right: 16px; bottom: calc(86px + env(safe-area-inset-bottom)); flex-wrap: wrap; }
+  .app-update > div { flex: 1 1 180px; }
+  .install-dialog { padding: 24px; }
+}
+@media (display-mode: standalone) and (max-width: 760px) {
+  .app-header { height: calc(66px + env(safe-area-inset-top)); }
+}

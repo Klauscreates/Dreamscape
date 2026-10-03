@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="background" cx="35%" cy="24%" r="85%">
+      <stop stop-color="#30363d"/><stop offset="1" stop-color="#111214"/>
+    </radialGradient>
+    <radialGradient id="glass" cx="30%" cy="24%" r="78%">
+      <stop stop-color="#e2ecf2"/><stop offset=".22" stop-color="#93adbc"/>
+      <stop offset=".61" stop-color="#405865"/><stop offset="1" stop-color="#18222b"/>
+    </radialGradient>
+    <linearGradient id="edge" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#f1f7fa"/><stop offset=".48" stop-color="#9db7c8"/>
+      <stop offset="1" stop-color="#536b7c"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#background)" d="M0 0h512v512H0z"/>
+  <circle cx="256" cy="256" r="153" fill="none" stroke="#8caabd" stroke-width="1.5" opacity=".24"/>
+  <path d="M253 115c36-9 45 20 75 26 35 8 55 8 60 41 6 35 33 50 18 84-14 32 4 59-29 80-25 15-32 47-64 44-36-3-53 27-85 8-32-20-62-1-76-36-12-30-40-39-32-71 8-34-20-57 2-86 24-32 10-65 49-73 34-7 48-9 82-17z" fill="url(#glass)" stroke="url(#edge)" stroke-width="3"/>
+  <path d="M173 185c21-32 57-38 86-36 32 3 36 31 68 34" fill="none" stroke="#f1f7fa" stroke-width="7" stroke-linecap="round" opacity=".6"/>
+  <path d="M163 282c29 22 55 22 83 7 37-20 54-8 89 11" fill="none" stroke="#afcedc" stroke-width="2" opacity=".48"/>
+</svg>
